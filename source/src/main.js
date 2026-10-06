@@ -258,8 +258,8 @@ async function buildSplatWorld(W) {
         float tA = ${inputs.an}.x;
         float muddy = smoothstep(0.02, 0.08, c.r - c.b) * (1.0 - smoothstep(0.25, 0.4, c.r - c.b)) * (1.0 - smoothstep(${inputs.an}.y + 1.5, ${inputs.an}.y + 4.0, p.y));
         float flow = sin(p.z * 0.9 - tA * 3.2 + sin(p.x * 0.6 + tA * 0.7) * 1.8) * 0.5 + sin(p.z * 2.3 - tA * 5.1 + p.x * 0.9) * 0.3;
-        outc *= 1.0 + muddy * (0.16 * flow + 0.05);
-        ${outputs.gsplat}.center.y += muddy * 0.12 * flow;
+        outc *= 1.0 + muddy * 0.07 * flow;
+        ${outputs.gsplat}.center.y += muddy * 0.05 * flow;
         // the sky crack's molten light breathes and flickers along its length
         float hot = smoothstep(0.22, 0.45, c.r - c.b) * smoothstep(12.0, 18.0, p.y);
         float pulse = 0.65 + 0.35 * sin(tA * 2.4 + p.z * 0.18) + 0.25 * sin(tA * 9.0 + p.z * 1.3 + p.x) * sin(tA * 5.3);
@@ -1206,6 +1206,7 @@ function update(dt) {
   water.position.y = G.water; updateQuake(dt);
   const W0 = CFG.world?.water?.water ?? -2.6; const fl = THREE.MathUtils.clamp((G.water - W0) / (G.failLevel - W0), 0, 1);
   $('flood-fill').style.height = (fl * 100).toFixed(1) + '%';
+  waterMat.opacity = 0.5 + 0.45 * fl; // low water stays a thin sheen over the world's own torrent; deep water turns opaque
   $('flood').classList.toggle('danger', fl > 0.75);
   if (floodGain) floodGain.gain.value = G.phase === 'play' ? 0.04 + fl * 0.35 : 0;
   updateGuide();
