@@ -752,7 +752,13 @@ function update(dt) {
   if (player.jv || player.jy) { player.jv = (player.jv || 0) - 22 * dt; player.jy = (player.jy || 0) + player.jv * dt; if (player.jy <= 0) { if (player.jv < -6) { step(); shake = 0.12; } player.jy = 0; player.jv = 0; } }
   const eye = Math.max(player.pos.y + 1.7, G.water + 0.6) + (player.jy || 0);
 
-  if (G.phase !== 'won') {
+  if (G.phase === 'cine') {
+    G.cineT = (G.cineT || 0) + dt; const k = Math.min(1, G.cineT / 24);
+    const c = crackSegs[2].center; const a = 0.6 + k * 1.4, r = 22 - k * 8;
+    camera.position.set(START_POS.x + Math.sin(a) * r * 0.6, groundFn(START_POS.x, START_POS.y) + 4 + k * 3, START_POS.y + Math.cos(a) * r * 0.5);
+    camera.lookAt(THREE.MathUtils.lerp(c.x, START_POS.x, 0.4), THREE.MathUtils.lerp(c.y, camera.position.y, 0.35 + k * 0.3), THREE.MathUtils.lerp(c.z, START_POS.y, 0.4));
+    G.water = (CFG.world?.water?.water ?? -2.6) + Math.sin(G.t * 0.5) * 0.15; water.position.y = G.water;
+  } else if (G.phase !== 'won') {
     camera.position.set(player.pos.x, eye + Math.abs(Math.sin(G.walkT || 0)) * 0.06, player.pos.z);
     camera.rotation.set(0, 0, 0, 'YXZ'); camera.rotation.order = 'YXZ';
     camera.rotation.y = player.yaw; camera.rotation.x = player.pitch;
@@ -941,7 +947,7 @@ function resetGame() {
 function startGame() { audioInit(); musicInit(); bgmPlay(); resetGame(); G.started = false; setTimeout(() => G.started = true, 400); }
 let seenIntro = false;
 async function cinematic() {
-  audioInit(); $('intro').hidden = true; const c = $('cine'); c.hidden = false; const line = $('cine-line');
+  audioInit(); musicInit(); bgmPlay(); G.phase = 'cine'; G.cineT = 0; $('intro').hidden = true; const c = $('cine'); c.hidden = false; const line = $('cine-line');
   const lines = [['往古之时，四极废，九州裂。', 'In ancient times, the four pillars broke and the nine lands split.', 4500], ['天，塌了。', 'The sky fell.', 3200], ['洪水从天的裂缝里倾泻而下，世界失去了颜色。', 'A flood poured through the crack, and the world lost its colour.', 5500], ['只有你，女娲，能把天补上。', 'Only you, Nüwa, can mend the sky.', 4200], ['在洪水吞没山谷之前，找到五行之石。', 'Find the five elemental stones before the flood takes the valley.', 4800]];
   let skip = false; c.onclick = () => { skip = true; };
   for (const [t, en, ms] of lines) {
@@ -950,7 +956,7 @@ async function cinematic() {
     for (let k = 0; k < ms / 100 && !skip; k++) await new Promise(r => setTimeout(r, 100));
   }
   try { speechSynthesis.cancel(); } catch (_) {}
-  c.hidden = true; $('sub').classList.remove('on'); seenIntro = true; startGame();
+  c.hidden = true; $('sub').classList.remove('on'); seenIntro = true; audioInit(); musicInit(); resetGame(); G.started = false; setTimeout(() => G.started = true, 400);
 }
 $('start').addEventListener('click', () => seenIntro ? startGame() : cinematic());
 $('resume').addEventListener('click', () => setPause(false));
