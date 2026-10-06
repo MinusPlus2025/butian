@@ -1,0 +1,180 @@
+<meta charset="utf-8">
+<title>补天 Mending the Sky</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600&family=Cormorant+Garamond:ital,wght@0,500;1,500&display=swap">
+<style>
+/* Layout: full-bleed WebGL scene; ink-on-paper overlays pinned to corners, never covering the centre. Single committed look (dusk ink). */
+[hidden] { display: none !important; }
+:root {
+  --ink: #15171b;
+  --paper: #efe8da;
+  --paper-dim: rgba(239, 232, 218, .72);
+  --seal: #b8322a;
+  --veil: rgba(18, 20, 24, .62);
+  --wood: #4fa36a; --fire: #d9472f; --earth: #dcae3c; --metal: #eeeae0; --water: #2f5fb0;
+  --brush: "Ma Shan Zheng", "STKaiti", "KaiTi", serif;
+  --serif: "Noto Serif SC", "Songti SC", "SimSun", serif;
+  --latin: "Cormorant Garamond", Georgia, serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; margin: 0; background: var(--ink); color: var(--paper); overflow: hidden; font-family: var(--serif); }
+#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.overlay { position: fixed; inset: 0; display: grid; place-items: center; overflow-y: auto; padding: 16px; background: var(--veil); backdrop-filter: blur(2px); z-index: 10; }
+.card { max-width: 34rem; width: 100%; display: grid; gap: 1rem; text-align: left; }
+.title { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+.title h1 { font-family: var(--brush); font-weight: 400; font-size: clamp(4rem, 14vw, 7.5rem); line-height: .9; margin: 0; letter-spacing: .05em; }
+.title .en { font-family: var(--latin); font-style: italic; font-size: 1.5rem; color: var(--paper-dim); }
+.seal { display: inline-grid; place-items: center; width: 2.6rem; height: 2.6rem; background: var(--seal); color: var(--paper); font-family: var(--brush); font-size: 1.3rem; border-radius: 3px; transform: rotate(-4deg); }
+.story { font-size: 1.02rem; line-height: 1.9; margin: 0; }
+.story-en { font-family: var(--latin); font-size: 1.05rem; line-height: 1.5; color: var(--paper-dim); margin: 0; }
+.quote { font-family: var(--brush); font-size: 1.35rem; color: var(--paper-dim); margin: 0; }
+.rules { display: grid; grid-template-columns: auto 1fr; gap: .35rem 1rem; font-size: .9rem; margin: 0; }
+.rules dt { color: var(--paper-dim); letter-spacing: .1em; }
+.rules dd { margin: 0; }
+.cycle { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; font-size: 1rem; }
+.cycle b { font-weight: 600; }
+button.big { justify-self: start; font: 600 1.15rem var(--serif); letter-spacing: .3em; padding: .75rem 2.2rem; background: var(--paper); color: var(--ink); border: 0; border-radius: 2px; cursor: pointer; }
+button.big:disabled { opacity: .5; cursor: wait; }
+button.big:focus-visible, #act:focus-visible { outline: 2px solid var(--seal); outline-offset: 3px; }
+.small { font-size: .8rem; color: var(--paper-dim); margin: 0; }
+
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+#ring { position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: 6px; }
+#ring .els { display: flex; gap: 10px; }
+#ring .el { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-family: var(--brush); font-size: 1.3rem; border: 1.5px solid var(--paper-dim); color: var(--paper-dim); background: rgba(20, 22, 26, .35); transition: all .4s; }
+#ring .el.done { color: var(--ink); border-color: transparent; }
+#ring .el.next { border-color: var(--paper); color: var(--paper); box-shadow: 0 0 0 4px rgba(239, 232, 218, .18); animation: pulse 1.4s infinite; }
+#el-wood.done { background: var(--wood); } #el-fire.done { background: var(--fire); } #el-earth.done { background: var(--earth); } #el-metal.done { background: var(--metal); } #el-water.done { background: var(--water); color: var(--paper); }
+#ring-hint { font-size: .8rem; color: var(--paper); text-shadow: 0 1px 3px #000; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 9px rgba(239, 232, 218, 0); } }
+#flood { position: absolute; left: calc(16px + env(safe-area-inset-left, 0px)); top: 50%; transform: translateY(-50%); width: 14px; height: 38vh; border: 1.5px solid var(--paper-dim); border-radius: 8px; overflow: hidden; background: rgba(20, 22, 26, .35); }
+#flood-fill { position: absolute; bottom: 0; left: 0; right: 0; height: 0; background: linear-gradient(#5a8fb0, #2a5576); transition: height .3s; }
+#flood.danger { border-color: var(--seal); animation: pulse 0.8s infinite; }
+#flood-label { position: absolute; left: calc(36px + env(safe-area-inset-left, 0px)); top: calc(50% - 19vh); font-size: .75rem; writing-mode: vertical-rl; letter-spacing: .3em; color: var(--paper-dim); text-shadow: 0 1px 3px #000; }
+#timer { position: absolute; right: 16px; top: calc(16px + env(safe-area-inset-top, 0px)); font-family: var(--latin); font-size: 1.3rem; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #000; }
+#prompt, #msg { position: absolute; left: 50%; transform: translateX(-50%); padding: .4rem 2.5rem; background: linear-gradient(90deg, transparent, rgba(0,0,0,.55) 20%, rgba(0,0,0,.55) 80%, transparent); color: #f4ead6; letter-spacing: .08em; text-shadow: 0 1px 2px #000; opacity: 0; transition: opacity .3s; white-space: nowrap; max-width: calc(100vw - 32px); overflow: hidden; text-overflow: ellipsis; }
+#prompt { bottom: calc(28px + env(safe-area-inset-bottom, 0px)); font-size: .95rem; }
+#msg { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); font: 1.2rem var(--brush); letter-spacing: .12em; color: #ffe2a0; }
+#prompt.on, #msg.on { opacity: 1; }
+#reticle { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; opacity: 0; transition: opacity .2s; z-index: 5; }
+#reticle.on { opacity: 1; }
+#reticle i { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 50%; background: rgba(255,246,220,.9); box-shadow: 0 0 4px #000; transition: all .15s ease-out; box-sizing: border-box; }
+#reticle.hot i { left: -17px; top: -17px; width: 34px; height: 34px; background: transparent; border: 2px solid var(--rc,#ffd27a); box-shadow: 0 0 14px var(--rc,#ffd27a), inset 0 0 10px var(--rc,#ffd27a); animation: rpulse 1s ease-in-out infinite; }
+#reticle span { position: absolute; left: 28px; top: -11px; white-space: nowrap; color: #fff4dc; font-size: 15px; text-shadow: 0 1px 3px #000, 0 0 8px #000; letter-spacing: .06em; opacity: 0; transition: opacity .15s; }
+#reticle.hot span { opacity: 1; }
+@keyframes rpulse { 50% { transform: scale(1.12); } }
+#cross { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: var(--paper); opacity: .7; }
+#act { position: fixed; right: 24px; bottom: calc(90px + env(safe-area-inset-bottom, 0px)); z-index: 6; width: 76px; height: 76px; border-radius: 50%; border: 0; background: var(--seal); color: var(--paper); font: 1.6rem var(--brush); pointer-events: auto; }
+@media (hover: hover) and (pointer: fine) { #act { display: none; } }
+.end-stats { display: flex; gap: 2rem; flex-wrap: wrap; font-size: .95rem; }
+.end-stats div { display: grid; gap: .2rem; }
+.end-stats span:first-child { color: var(--paper-dim); font-size: .8rem; letter-spacing: .1em; }
+.end-stats span:last-child { font-family: var(--latin); font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+#loading { position: fixed; bottom: 16px; right: 16px; font-size: .8rem; color: var(--paper-dim); z-index: 11; }
+#guide { position: fixed; left: 0; top: 0; z-index: 5; pointer-events: none; display: grid; justify-items: center; gap: 2px; margin: -18px 0 0 -60px; width: 120px; }
+#guide-arrow { display: block; filter: drop-shadow(0 0 8px rgba(255,190,60,.95)) drop-shadow(0 2px 2px rgba(0,0,0,.6)); transition: transform .08s linear; }
+#guide.edge { display: none !important; }
+#guide.edge #guide-arrow { animation: gpulse 1s ease-in-out infinite; }
+@keyframes gpulse { 50% { opacity: .55; } }
+#guide-text { background: rgba(20,14,4,.55); padding: 1px 8px; border-radius: 9px; border: 1px solid rgba(255,210,120,.5); }
+#banner { position: fixed; left: 50%; top: 30%; transform: translate(-50%,-50%); z-index: 6; pointer-events: none; text-align: center; opacity: 0; display: grid; gap: 4px; }
+#banner b { font: 400 clamp(3rem,10vw,6rem) var(--brush); letter-spacing: .15em; text-shadow: 0 0 24px currentColor, 0 3px 6px #000; }
+#banner i { font: italic 1.1rem var(--latin); color: var(--paper); text-shadow: 0 1px 3px #000; }
+#banner.go { animation: bn 1.8s ease-out; }
+@keyframes bn { 0% { opacity: 0; transform: translate(-50%,-50%) scale(1.8); } 12% { opacity: 1; transform: translate(-50%,-50%) scale(1); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%,-60%) scale(1); } }
+#guide-text { font-size: .78rem; color: #ffe9a8; text-shadow: 0 1px 3px #000; white-space: nowrap; }
+#pausebtn { position: absolute; right: 16px; top: calc(52px + env(safe-area-inset-top, 0px)); pointer-events: auto; background: rgba(20,22,26,.55); color: var(--paper); border: 1px solid var(--paper-dim); border-radius: 2px; font: .85rem var(--serif); padding: .35rem .7rem; cursor: pointer; }
+.howto { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; counter-reset: s; }
+.howto li { display: grid; grid-template-columns: 1.8rem 1fr; align-items: start; font-size: .98rem; }
+.howto li::before { counter-increment: s; content: counter(s); display: grid; place-items: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: var(--seal); font-size: .8rem; }
+.btns { display: flex; gap: .8rem; flex-wrap: wrap; }
+button.ghost { background: transparent; color: var(--paper); border: 1px solid var(--paper-dim); }
+#cine { position: fixed; inset: 0; z-index: 20; background: radial-gradient(ellipse at 50% 50%, rgba(20,6,4,.15) 0%, rgba(0,0,0,.55) 60%, rgba(0,0,0,.92) 100%); box-shadow: inset 0 12vh 0 #000, inset 0 -12vh 0 #000; display: grid; place-items: center; padding: 24px; cursor: pointer; }
+#cine-line { font: 400 clamp(1.8rem, 4.2vw, 3rem) var(--brush); letter-spacing: .22em; color: #efe2cc; text-align: center; max-width: 90vw; line-height: 1.6; white-space: pre-line; word-break: keep-all; opacity: 0; transition: opacity 1.2s; text-shadow: 0 0 30px rgba(200,40,30,.5); }
+#cine-line.on { opacity: 1; }
+#cine.soft { background: linear-gradient(0deg, rgba(0,0,0,.55), transparent 45%); box-shadow: none; pointer-events: none; place-items: end center; padding-bottom: 10vh; cursor: default; }
+#cine.soft #cine-line { font-size: clamp(1.4rem, 3vw, 2.2rem); text-shadow: 0 2px 12px #000; }
+#cine.soft .skip { display: none; }
+#cine-line small { display: block; margin-top: .9rem; font: italic 400 clamp(1rem, 2.2vw, 1.4rem) var(--latin); letter-spacing: .04em; color: #bfae98; text-shadow: none; }
+#cine .skip { position: absolute; right: 20px; bottom: 20px; font-size: .8rem; color: #777; }
+#sub { position: fixed; left: 50%; width: max-content; top: calc(110px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 21; font: 400 clamp(1.3rem, 2.6vw, 1.8rem) var(--brush); letter-spacing: .12em; white-space: pre-line; word-break: keep-all; line-height: 1.5; color: #ffd9c0; text-shadow: 0 0 18px rgba(190,40,30,.85), 0 2px 4px #000; opacity: 0; transition: opacity .4s; max-width: calc(100vw - 32px); text-align: center; pointer-events: none; }
+#sub small { display: block; font: italic 500 clamp(.85rem, 1.4vw, 1.05rem) 'Cormorant Garamond', serif; letter-spacing: .04em; color: #f0e2cc; text-shadow: 0 1px 3px #000; margin-top: 4px; white-space: normal; }
+#sub.on { opacity: 1; }
+#keys { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 5; display: grid; gap: 5px; font-size: .78rem; color: #f4ead6; text-shadow: 0 1px 2px #000; pointer-events: none; }
+#keys div { display: flex; align-items: center; gap: 6px; }
+#keys kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 5px; border: 1px solid rgba(255,230,180,.7); border-bottom-width: 3px; border-radius: 4px; background: rgba(0,0,0,.45); font: 600 .72rem var(--latin); color: #ffe9b0; }
+@media (hover: none) { #keys { display: none; } }
+#flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 4; mix-blend-mode: screen; }
+#flash.go { animation: fl 1.2s ease-out; }
+@keyframes fl { 0% { opacity: .75; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #ring .el.next, #flood.danger { animation: none; } }
+</style>
+
+<canvas id="c"></canvas>
+<div id="flash"></div>
+<div id="cine" hidden><div id="cine-line"></div><div class="skip">点击跳过 · click to skip</div></div>
+<div id="sub"></div>
+<div id="banner"><b></b><i></i></div>
+<div id="guide" hidden><svg id="guide-arrow" style="display:none" viewBox="0 0 48 48" width="44" height="44"><defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6c8"/><stop offset="1" stop-color="#f0a020"/></linearGradient></defs><path d="M24 3 L44 40 L24 31 L4 40 Z" fill="url(#ga)" stroke="#5a2e00" stroke-width="2.5" stroke-linejoin="round"/></svg><div id="guide-text"></div></div>
+
+<div id="hud" hidden>
+  <div id="ring">
+    <div class="els">
+      <div class="el" id="el-wood">木</div><div class="el" id="el-fire">火</div><div class="el" id="el-earth">土</div><div class="el" id="el-metal">金</div><div class="el" id="el-water">水</div>
+    </div>
+    <div id="ring-hint"></div>
+  </div>
+  <div id="flood"><div id="flood-fill"></div></div>
+  <div id="flood-label">水位 · FLOOD</div>
+  <div id="timer">0:00</div>
+  <button id="pausebtn">暂停 / 退出 · Esc</button>
+  <div id="cross"></div>
+  <div id="prompt"></div>
+  <div id="reticle"><i></i><span></span></div>
+  <div id="keys"><div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动</div><div><kbd>鼠标</kbd> 转视角（先点一下画面）</div><div><kbd>E</kbd>/<kbd>左键</kbd> 靠近石头拾起 · 炉边投炉</div><div><kbd>Shift</kbd> 冲刺 <kbd>空格</kbd> 跳</div><div><kbd>Esc</kbd> 暂停 / 退出</div><div style="color:#ffd060">● 跟着地上的金色光点走</div></div>
+  <div id="msg"></div>
+</div>
+<button id="act" hidden aria-label="Interact">取</button>
+
+<div class="overlay" id="intro" style="background:radial-gradient(ellipse at 50% 45%, rgba(0,0,0,.25), rgba(0,0,0,.8))">
+  <div class="card" style="justify-items:center;text-align:center;gap:1.4rem">
+    <div class="title" style="justify-content:center"><h1>补天</h1><span class="seal">礼</span></div>
+    <span class="en" style="font:italic 1.6rem var(--latin);color:var(--paper-dim);margin-top:-1rem">Mending the Sky</span>
+    <p class="quote">天塌了，洪水不息。你是女娲。</p>
+    <button class="big" id="start" disabled style="justify-self:center">开 始 · Start</button>
+    <p class="small">World Labs Marble · Tripo · Tripothon S1</p>
+  </div>
+</div>
+
+<div class="overlay" id="end" hidden style="background:linear-gradient(90deg, rgba(10,10,12,.7), rgba(10,10,12,.15) 70%);place-items:center start;padding-left:6vw">
+  <div class="card">
+    <div class="title"><h1>天成</h1><span class="en">The sky is whole</span></div>
+    <p class="story">洪水退去，颜色回到山河。第一批人走进了山谷。<br>这个世界，是女娲送给他们的礼物。</p>
+    <p class="story-en">The flood recedes and colour returns. The first people walk into the valley. This world is Nüwa's gift to them.</p>
+    <div class="end-stats">
+      <div><span>用时 TIME</span><span id="end-time">0:00</span></div>
+      <div><span>碎石 SHATTERED</span><span id="end-miss">0</span></div>
+      <div><span>你的顺序 YOUR CYCLE</span><span id="end-order"></span></div>
+    </div>
+    <button class="big" id="again">再 补 一 次</button>
+  </div>
+</div>
+
+<div class="overlay" id="lose" hidden>
+  <div class="card">
+    <div class="title"><h1>水没</h1><span class="en">The flood took the valley</span></div>
+    <p class="story">你补上了 <b id="lose-n">0</b> 块。洪水先到了。想想从哪一块开始，路会更短。</p>
+    <p class="story-en">Think about which stone to start with. The low ground floods first.</p>
+    <button class="big" id="retry">再 试</button>
+  </div>
+</div>
+<div class="overlay" id="pause" hidden>
+  <div class="card">
+    <div class="title"><h1 style="font-size:4rem">暂停</h1><span class="en">Paused</span></div>
+    <p class="small">洪水停住了。WASD 移动 · 鼠标看 · Shift 跑 · E 拾取/炼石 · Esc 暂停</p>
+    <div class="btns"><button class="big" id="resume">继 续</button><button class="big ghost" id="restart">重新开始</button><button class="big ghost" id="quit">退出到标题</button></div>
+  </div>
+</div>
+<div id="loading">载入世界…… Loading the world</div>
+<!--CONFIG-->
+<!--SCRIPT-->
