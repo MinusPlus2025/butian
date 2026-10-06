@@ -56,6 +56,13 @@ button.big:focus-visible, #act:focus-visible { outline: 2px solid var(--seal); o
 #prompt { bottom: calc(28px + env(safe-area-inset-bottom, 0px)); font-size: .95rem; }
 #msg { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); font: 1.2rem var(--brush); letter-spacing: .12em; color: #ffe2a0; }
 #prompt.on, #msg.on { opacity: 1; }
+#reticle { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; opacity: 0; transition: opacity .2s; z-index: 5; }
+#reticle.on { opacity: 1; }
+#reticle i { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 50%; background: rgba(255,246,220,.9); box-shadow: 0 0 4px #000; transition: all .15s ease-out; box-sizing: border-box; }
+#reticle.hot i { left: -17px; top: -17px; width: 34px; height: 34px; background: transparent; border: 2px solid var(--rc,#ffd27a); box-shadow: 0 0 14px var(--rc,#ffd27a), inset 0 0 10px var(--rc,#ffd27a); animation: rpulse 1s ease-in-out infinite; }
+#reticle span { position: absolute; left: 28px; top: -11px; white-space: nowrap; color: #fff4dc; font-size: 15px; text-shadow: 0 1px 3px #000, 0 0 8px #000; letter-spacing: .06em; opacity: 0; transition: opacity .15s; }
+#reticle.hot span { opacity: 1; }
+@keyframes rpulse { 50% { transform: scale(1.12); } }
 #cross { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: var(--paper); opacity: .7; }
 #act { position: fixed; right: 24px; bottom: calc(90px + env(safe-area-inset-bottom, 0px)); z-index: 6; width: 76px; height: 76px; border-radius: 50%; border: 0; background: var(--seal); color: var(--paper); font: 1.6rem var(--brush); pointer-events: auto; }
 @media (hover: hover) and (pointer: fine) { #act { display: none; } }
@@ -119,6 +126,7 @@ button.ghost { background: transparent; color: var(--paper); border: 1px solid v
   <button id="pausebtn">暂停 / 退出 · Esc</button>
   <div id="cross"></div>
   <div id="prompt"></div>
+  <div id="reticle"><i></i><span></span></div>
   <div id="keys"><div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动</div><div><kbd>鼠标</kbd> 转视角（先点一下画面）</div><div><kbd>左键</kbd> 抓石 / 扔进炉</div><div><kbd>Shift</kbd> 冲刺 <kbd>空格</kbd> 跳</div><div><kbd>Esc</kbd> 暂停 / 退出</div><div style="color:#ffd060">● 跟着地上的金色光点走</div></div>
   <div id="msg"></div>
 </div>

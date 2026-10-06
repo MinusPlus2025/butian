@@ -375,7 +375,8 @@ async function setupHands() {
   let wrapL;
   const ml = null;
   if (ml) { const bl = new THREE.Box3().setFromObject(ml), sl = bl.getSize(new THREE.Vector3()); ml.position.sub(bl.getCenter(new THREE.Vector3())); wrapL = new THREE.Group(); wrapL.add(ml); wrapL.scale.setScalar((H.size || 0.42) / Math.max(sl.x, sl.y, sl.z)); if (H.rot) wrapL.rotation.set(...H.rot); }
-  else { wrapL = wrapR.clone(); wrapL.scale.x *= -1; } handL.add(wrapL); handL.add(new THREE.PointLight(0xfff0d0, 0.5, 2)); G.realHands = true;
+  else { wrapL = wrapR.clone(); wrapL.scale.x *= -1; } handL.add(wrapL); handL.add(new THREE.PointLight(0xfff0d0, 0.5, 2)); G.realHands = H.left !== false;
+  G.handWrap = wrapR; G.palm = 0; if (H.tilt) hand.rotation.set(...H.tilt);
 }
 async function setupProps() {
   setupHands();
@@ -486,7 +487,40 @@ let floodGain = null, rainHiss = null;
 let rainEl = null, thunderEls = [];
 function rainInit() {
   if (CFG.assets?.rain && !rainEl && AC) { rainEl = new Audio(CFG.assets.rain); rainEl.loop = true; rainEl.volume = 0.6; rainEl.play().catch(() => {}); rainHiss = { gain: { value: 0 } }; }
-  if (!AC || rainHiss) return; const n = AC.sampleRate * 2, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; const src = AC.createBufferSource(); src.buffer = b; src.loop = true; let last = 0; for (let i = 0; i < n; i++) { last = 0.97 * last + 0.03 * d[i]; d[i] = last * 6; } const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 400; const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3500; rainHiss = AC.createGain(); rainHiss.gain.value = 0.15; src.connect(hp).connect(lp).connect(rainHiss).connect(AC.destination); src.start(); }
+  if (!AC || rainHiss) return;
+  // synthesized rain: stereo pink-noise wash + thousands of pre-rendered droplet ticks + a low body, with slow gusts
+  const sr = AC.sampleRate, n = sr * 5, b = AC.createBuffer(2, n, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch); let b0 = 0, b1 = 0, b2 = 0, br = 0;
+    for (let i = 0; i < n; i++) { const w = Math.random() * 2 - 1; b0 = 0.99765 * b0 + w * 0.099046; b1 = 0.963 * b1 + w * 0.2965164; b2 = 0.57 * b2 + w * 1.0526913; br = 0.995 * br + w * 0.02; d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.11 + br * 0.9; }
+    for (let k = 0; k < 7000; k++) { const at = Math.floor(Math.random() * (n - 900)), f = 1800 + Math.random() * 5200, a = Math.pow(Math.random(), 3) * 0.55, kd = Math.exp(-1 / (sr * (0.0012 + Math.random() * 0.004))), w0 = 6.283 * f / sr; let e = a, ph = 0; for (let j = 0; j < 800 && e > 0.002; j++) { d[at + j] += Math.sin(ph) * e; ph += w0 * (1 - j / sr * 60); e *= kd; } }
+    const fade = 2000; for (let i = 0; i < fade; i++) { const m = i / fade; d[i] = d[i] * m + d[n - fade + i] * (1 - m); } // seamless loop
+  }
+  const src = AC.createBufferSource(); src.buffer = b; src.loop = true; src.loopEnd = 5 - 2000 / sr;
+  const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 90; const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 9000;
+  const gust = AC.createGain(); gust.gain.value = 0.85; const lfo = AC.createOscillator(), lg = AC.createGain(); lfo.frequency.value = 0.07; lg.gain.value = 0.25; lfo.connect(lg).connect(gust.gain); lfo.start();
+  rainHiss = AC.createGain(); rainHiss.gain.value = 0.3; src.connect(hp).connect(lp).connect(gust).connect(rainHiss).connect(AC.destination); src.start(); G.rainSynth = true; }
+// synthesized thunder: a sharp crack, then a long rolling rumble built from random swells of brown noise
+const thunderBufs = [];
+function thunderSfx(near = 1) {
+  if (!AC) return; const sr = AC.sampleRate, dur = 5 + Math.random() * 3, n = Math.floor(sr * dur);
+  let b = thunderBufs.length >= 4 ? thunderBufs[Math.floor(Math.random() * 4)] : null; if (!b) { near = Math.max(near, 0.7); b = AC.createBuffer(2, n, sr); thunderBufs.push(b);
+  const bumps = Array.from({ length: 5 + Math.floor(Math.random() * 5) }, (_, i) => [0.05 + Math.random() * dur * 0.6, 0.15 + Math.random() * 0.8, (0.4 + Math.random() * 0.6) * Math.exp(-i * 0.15)]);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch); let br = 0, br2 = 0, env = 0; const off = ch * 0.03;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr, w = Math.random() * 2 - 1; br = 0.985 * br + w * 0.12; br2 = 0.9995 * br2 + w * 0.01;
+      if ((i & 63) === 0) { env = 0; for (const [c, wd, a] of bumps) { const x = (t - c - off) / wd; env += a * (x < 0 ? Math.exp(-x * x * 8) : Math.exp(-x)); } env *= Math.exp(-t / (dur * 0.45)); }
+      const crack = near > 0.6 ? Math.exp(-t / 0.05) * (t < 0.25 ? 1 : 0) * w * 0.9 * near : 0;
+      d[i] = br * env * 1.6 + br2 * env * 3 + crack;
+    }
+  } }
+  const src = AC.createBufferSource(); src.buffer = b; const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; const t0 = AC.currentTime;
+  lp.frequency.setValueAtTime(near > 0.6 ? 4000 : 900, t0); lp.frequency.exponentialRampToValueAtTime(180, t0 + 1.2);
+  const g = AC.createGain(); g.gain.value = 0.9 * (0.5 + near * 0.5); src.connect(lp).connect(g).connect(AC.destination); src.start(t0);
+}
+// bronze clang for a stone landing in the cauldron
+function clang(vol = 0.3) { if (!AC) return; const t = AC.currentTime; [[196, 1, 2.6], [196 * 2.32, 0.6, 1.8], [196 * 4.15, 0.35, 1.1], [196 * 5.96, 0.2, 0.7], [196 * 8.3, 0.12, 0.4]].forEach(([f, a, d]) => { const o = AC.createOscillator(), g = AC.createGain(); o.frequency.value = f * (1 + (Math.random() - 0.5) * 0.004); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol * a, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t + d); o.connect(g).connect(AC.destination); o.start(t); o.stop(t + d + 0.05); }); noiseBurst(0.12, 4000, 1200, vol * 0.5, 'bandpass'); }
 function pluck(freq, dur = 2.2, vol = 0.22, delay = 0) {
   if (!AC) return; const t0 = AC.currentTime + delay;
   [1, 2, 3.01].forEach((h, k) => {
@@ -642,9 +676,9 @@ const hand = new THREE.Group();
 }
 const HAND_REST = new THREE.Vector3(0.28, -0.2, -0.5);
 let reachT = 0;
-function aimAt(target, maxD) {
+function aimAt(target, maxD, loose = 1) {
   const d = tmpA.copy(target).sub(camera.position); const dist = d.length(); if (dist > maxD) return false;
-  camera.getWorldDirection(tmpB); return d.normalize().dot(tmpB) > Math.cos(dist < 4 ? 0.6 : 0.28);
+  camera.getWorldDirection(tmpB); return d.normalize().dot(tmpB) > Math.cos((dist < 6 ? 0.5 : 0.3) * loose);
 }
 const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
 const throws = [];
@@ -653,7 +687,7 @@ function handAction() {
   reachT = 0.35;
   if (!G.carrying) {
     let best = null, bd = 1e9;
-    for (const o of G.ores) { if (o.taken || o.used) continue; const dd = o.stone.position.distanceTo(camera.position); if (dd < bd && aimAt(o.stone.position, 14)) { bd = dd; best = o; } }
+    for (const o of G.ores) { if (o.taken || o.used) continue; const dd = o.stone.position.distanceTo(camera.position); if (dd < bd && (o === G.hover || aimAt(o.stone.position, 14))) { bd = dd; best = o; } }
     if (!best) { let bd2 = 7; for (const o of G.ores) { if (o.taken || o.used) continue; const d2 = Math.hypot(o.home.x - player.pos.x, o.home.z - player.pos.z); if (d2 < bd2) { bd2 = d2; best = o; } } }
     if (best) { G.grabFrom = best.stone.position.clone(); G.grabT = 0; return interact(best); }
     say('对准发光的原石，再点击抓取 · Aim at an ore and click', 1800);
@@ -677,7 +711,7 @@ function interact(pick) {
   if (G.phase !== 'play') return;
   if (!G.carrying) {
     const o = pick || nearestOre();
-    if (o) { o.taken = true; o.beam.visible = false; o.light.visible = false; G.carrying = o; pluck(o.el.note, 1.2, 0.15); sfxPick(o.el.note); fovKick = 4; banner(`得 ${o.el.zh}`, `${o.el.en} ore`, '#' + new THREE.Color(o.el.color).getHexString()); if (G.tut < 1) { G.tut = 1; say(`第二步：带着${o.el.zh}回到铜炉，扔进去 · Bring it to the furnace and throw it in`, 6000); } else say(`拾起${o.el.name}（${o.el.zh}）· 带回炉中炼化`); pluck(o.el.note * 2, 0.8, 0.1, 0.12); return; }
+    if (o) { o.taken = true; o.beam.visible = false; o.light.visible = false; G.carrying = o; emit(o.stone.position, o.el.color, 50, 3, 2.5, 0.9); noiseBurst(0.16, 700, 140, 0.18, 'lowpass'); pluck(o.el.note, 1.2, 0.15); sfxPick(o.el.note); fovKick = 4; banner(`得 ${o.el.zh}`, `${o.el.en} ore`, '#' + new THREE.Color(o.el.color).getHexString()); if (G.tut < 1) { G.tut = 1; say(`第二步：带着${o.el.zh}回到铜炉，扔进去 · Bring it to the furnace and throw it in`, 6000); } else say(`拾起${o.el.name}（${o.el.zh}）· 带回炉中炼化`); pluck(o.el.note * 2, 0.8, 0.1, 0.12); return; }
   } else if (nearFurnace() && !G.forging) {
     const o = G.carrying; G.carrying = null; G.forging = 0.001; G.forgeEl = o;
     say(`炼石中…… ${o.el.zh}`); sfxForge(); fovKick = 6; return;
@@ -711,6 +745,7 @@ let shake = 0;
 const clock = new THREE.Clock();
 const tmpV = new THREE.Vector3();
 function update(dt) {
+  if (G.phase !== 'play' || G.paused) $('reticle')?.classList.remove('on');
   G.t += dt; skyMat.uniforms.uT.value = G.t;
   // flood
   if (G.phase === 'play') {
@@ -786,22 +821,23 @@ function update(dt) {
   const rk = Math.sin(Math.min(1, (0.35 - reachT) / 0.35) * Math.PI) * (reachT > 0 ? 1 : 0);
   hand.position.set(HAND_REST.x - rk * 0.12 + Math.sin(G.t * 1.3) * 0.006, HAND_REST.y + rk * 0.12 + Math.abs(Math.sin(G.walkT || 0)) * -0.025 + (G.carrying ? 0.05 : 0), HAND_REST.z - rk * 0.35);
   if (G.realHands) handL.position.set(-HAND_REST.x + rk * 0.04 - Math.sin(G.t * 1.1) * 0.006, HAND_REST.y + Math.abs(Math.sin((G.walkT || 0) + 1.5)) * -0.025 + (G.carrying ? 0.03 : -0.04), HAND_REST.z + 0.04);
-  if (!G.realHands) hand.children.forEach(c => { if (c.userData.f) c.rotation.x = Math.PI / 2 - (G.carrying ? 1.1 : 0.35 + rk * 0.8); });
+  if (G.handWrap) { const H = CFG.world?.hand || {}; G.palm += ((G.carrying && G.grabT > 0.5 ? 1 : 0) - G.palm) * Math.min(1, dt * 9); const a = H.idleY ?? -1.5708, b = H.holdY ?? 0; G.handWrap.rotation.y = a + (b - a) * G.palm; G.handWrap.rotation.z = Math.sin(G.palm * Math.PI) * 0.35 - rk * 0.25; }
+  else if (!G.realHands) hand.children.forEach(c => { if (c.userData.f) c.rotation.x = Math.PI / 2 - (G.carrying ? 1.1 : 0.35 + rk * 0.8); });
   for (let i = throws.length - 1; i >= 0; i--) {
     const th = throws[i]; th.t += dt / 0.7; const k = Math.min(1, th.t);
-    th.o.stone.position.lerpVectors(th.from, th.to, k); th.o.stone.position.y += Math.sin(k * Math.PI) * 2.5; th.o.stone.scale.setScalar(THREE.MathUtils.lerp(0.16, 0.5, k)); th.o.stone.rotation.x += dt * 10;
-    if (k >= 1) { throws.splice(i, 1); th.o.stone.visible = false; emit(th.to, 0xffa040, 80, 5, 3, 1); shake = 0.25; G.forging = 0.001; G.forgeEl = th.o; say(`炼石中…… ${th.o.el.zh} · Forging ${th.o.el.en}`); sfxForge(); fovKick = 6; }
+    th.o.stone.position.lerpVectors(th.from, th.to, k); th.o.stone.position.y += Math.sin(k * Math.PI) * 2.5; th.o.stone.scale.setScalar(THREE.MathUtils.lerp(0.16, 0.5, k)); th.o.stone.rotation.x += dt * 10; emit(th.o.stone.position, th.o.el.color, 3, 0.3, 0.2, 0.7);
+    if (k >= 1) { throws.splice(i, 1); th.o.stone.visible = false; clang(0.28); emit(th.to, th.o.el.color, 60, 4, 4, 1.2); emit(th.to, 0xffa040, 80, 5, 3, 1); shake = 0.25; G.forging = 0.001; G.forgeEl = th.o; say(`炼石中…… ${th.o.el.zh} · Forging ${th.o.el.en}`); sfxForge(); fovKick = 6; }
   }
   // ores bob, carried stone follows
   for (const o of G.ores) {
     if (o.used) continue;
     if (o === G.carrying) {
       camera.getWorldDirection(tmpV);
-      const hp = hand.localToWorld(tmpA.set(0, 0.12, -0.12));
-      if (G.grabT < 1) { G.grabT = Math.min(1, (G.grabT || 0) + dt * 4); o.stone.position.lerpVectors(G.grabFrom, hp, easeOut(G.grabT)); o.stone.scale.setScalar(THREE.MathUtils.lerp(1, 0.16, G.grabT)); }
-      else { o.stone.position.copy(hp); o.stone.scale.setScalar(0.16); }
+      const ho = CFG.world?.hand?.hold || [0, 0.12, -0.12]; const hp = hand.localToWorld(tmpA.set(ho[0], ho[1], ho[2]));
+      if (G.grabT < 1) { G.grabT = Math.min(1, (G.grabT || 0) + dt * 4); o.stone.position.lerpVectors(G.grabFrom, hp, easeOut(G.grabT)); o.stone.scale.setScalar(THREE.MathUtils.lerp(1, CFG.world?.hand?.holdScale ?? 0.16, G.grabT)); }
+      else { o.stone.position.copy(hp); o.stone.scale.setScalar(CFG.world?.hand?.holdScale ?? 0.16); }
       o.stone.rotation.y += dt;
-    } else if (!o.taken) { o.stone.rotation.y += dt * 0.5; o.stone.position.y = o.home.y + Math.sin(G.t * 1.6 + o.home.x) * 0.15; o.beam.material.opacity = 0.16 + Math.sin(G.t * 2 + o.home.z) * 0.06; }
+    } else if (!o.taken) { const hv = o === G.hover; o.stone.rotation.y += dt * (hv ? 2.2 : 0.5); o.stone.position.y = o.home.y + Math.sin(G.t * 1.6 + o.home.x) * 0.15 + (hv ? 0.25 : 0); o.stone.scale.setScalar(THREE.MathUtils.lerp(o.stone.scale.x, hv ? 1.18 + Math.sin(G.t * 8) * 0.04 : 1, Math.min(1, dt * 10))); o.beam.material.opacity = hv ? 0.42 : 0.16 + Math.sin(G.t * 2 + o.home.z) * 0.06; }
   }
   // forging
   if (G.forging) {
@@ -864,6 +900,23 @@ function update(dt) {
     else if (G.carrying) p = `携带：${G.carrying.el.name}（${G.carrying.el.zh}）· 回到炉边`;
     else { const o = nearestOre(); if (o) p = `对准${o.el.name}，点击抓取 · Click to grab`; }
     $('prompt').textContent = p; $('prompt').classList.toggle('on', !!p);
+    // reticle: a dot that blooms into a coloured ring on whatever a click would act on
+    let rc = null, rl = '';
+    if (!G.forging && !throws.length) {
+      if (!G.carrying) {
+        let bd = 1e9; for (const o of G.ores) { if (o.taken || o.used) continue; const dd = o.home.distanceTo(camera.position); if (dd < bd && aimAt(o.home, 14, o === G.lastRc ? 1.5 : 1)) { bd = dd; rc = o; } }
+        G.hover = rc; if (rc) rl = `抓取 ${rc.el.zh} · Grab`;
+      } else {
+        G.hover = null;
+        const fp = tmpV.set(FURNACE_POS.x, G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.8, FURNACE_POS.y);
+        if (aimAt(fp, 18) || Math.hypot(FURNACE_POS.x - player.pos.x, FURNACE_POS.y - player.pos.z) < 10) { rc = G.carrying; rl = `投入铜炉 · Throw`; }
+      }
+    } else G.hover = null;
+    const R = $('reticle'); R.classList.add('on'); R.classList.toggle('hot', !!rc);
+    if (rc) R.style.setProperty('--rc', '#' + new THREE.Color(rc.el.color).getHexString());
+    R.querySelector('span').textContent = rl;
+    if (rc && rc !== G.lastRc) pluck(rc.el.note * 2, 0.4, 0.05, 0.06);
+    G.lastRc = rc;
     $('act').hidden = !p || !!G.forging;
     $('timer').textContent = fmt(G.t - G.t0);
   }
@@ -878,7 +931,7 @@ const rainSeed = Array.from({ length: RAIN_N }, () => [Math.random() * 40 - 20, 
 let boltT = 4, boltFlash = 0;
 function updateAmbience(dt) {
   rainInit();
-  const amt = G.phase === 'won' ? 0 : 1 - (G.chain?.length || 0) / 6; rain.material.opacity = 0.55 * amt; if (rainEl) rainEl.volume = Math.min(1, 0.7 * amt); if (rainHiss) rainHiss.gain.value = 0.16 * amt; if (!rainEl && AC && amt > 0.05 && G.phase !== 'title') for (let k = 0; k < 2; k++) if (Math.random() < dt * 18 * amt) noiseBurst(0.03, 1500 + Math.random() * 3000, 800, 0.05 + Math.random() * 0.06, 'bandpass', Math.random() * 0.05); rain.visible = amt > 0.02;
+  const amt = G.phase === 'won' ? 0 : 1 - (G.chain?.length || 0) / 6; rain.material.opacity = 0.55 * amt; if (rainEl) rainEl.volume = Math.min(1, 0.7 * amt); if (rainHiss) rainHiss.gain.value = 0.3 * amt; if (!rainEl && !G.rainSynth && AC && amt > 0.05 && G.phase !== 'title') for (let k = 0; k < 2; k++) if (Math.random() < dt * 18 * amt) noiseBurst(0.03, 1500 + Math.random() * 3000, 800, 0.05 + Math.random() * 0.06, 'bandpass', Math.random() * 0.05); rain.visible = amt > 0.02;
   const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
   for (let i = 0; i < RAIN_N; i++) {
     const r = rainSeed[i]; r[1] -= r[3] * dt; if (r[1] < -4) { r[1] = 20 + Math.random() * 5; r[0] = Math.random() * 40 - 20; r[2] = Math.random() * 40 - 20; }
@@ -888,7 +941,7 @@ function updateAmbience(dt) {
   rainGeo.attributes.position.needsUpdate = true;
   if (G.phase === 'play' || G.phase === 'cine') {
     boltT -= dt;
-    if (boltT <= 0) { boltT = (3 + Math.random() * 5) * (0.6 + (G.chain?.length || 0) * 0.3); boltFlash = 1.4; flash(0xdfe6ff); setTimeout(() => { flash(0xbfd0ff); boltFlash = 1; }, 120); setTimeout(() => { if (CFG.assets?.thunder) { const t = new Audio(CFG.assets.thunder); t.volume = 0.9; t.play().catch(() => {}); } else { noiseBurst(0.35, 3000, 500, 0.5); drum(0.6); noiseBurst(3.5, 400, 40, 0.55, 'lowpass', 0.1); } shake = Math.max(shake, 0.2); }, 250 + Math.random() * 600);
+    if (boltT <= 0) { boltT = (3 + Math.random() * 5) * (0.6 + (G.chain?.length || 0) * 0.3); boltFlash = 1.4; flash(0xdfe6ff); setTimeout(() => { flash(0xbfd0ff); boltFlash = 1; }, 120); const near = Math.random(); setTimeout(() => { if (CFG.assets?.thunder) { const t = new Audio(CFG.assets.thunder); t.volume = 0.9; t.play().catch(() => {}); } else thunderSfx(near); shake = Math.max(shake, 0.2); }, 150 + (1 - near) * 1600);
       const c = crackSegs[Math.floor(Math.random() * crackSegs.length)]; if (c && !c.mended) emit(c.center, 0xdfe8ff, 60, 6, 0, 1.2); }
   }
   if ((G.phase === 'play' || G.phase === 'cine') && Math.random() < dt * 0.12 * (1 - (G.chain?.length || 0) / 5)) { shake = Math.max(shake, 0.35); drum(0.25); noiseBurst(1.5, 120, 50, 0.25, 'lowpass'); say('天又裂开一道口子…… · The sky cracks further…', 2200); }
