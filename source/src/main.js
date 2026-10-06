@@ -400,7 +400,9 @@ async function setupNuwa() {
   if (!CFG.assets?.nuwa) return;
   try {
     const bytes = await loadBin(CFG.assets.nuwa);
-    const gl = await new Promise((res, rej) => gltf.parse(bytes.buffer, '', res, rej)); const m = gl.scene;
+    const gl = await new Promise((res, rej) => gltf.parse(bytes.buffer, '', res, rej)); let m = gl.scene;
+    // Tripo's auto-rig on this robe is broken, so a skinned export would render exploded: keep only the bind-pose mesh
+    if (CFG.world?.nuwaStatic !== false) { const g = new THREE.Group(); m.traverse(o => { if (o.isMesh) { const geo = o.geometry.clone(); geo.deleteAttribute('skinIndex'); geo.deleteAttribute('skinWeight'); g.add(new THREE.Mesh(geo, o.material)); } }); m = g; gl.animations = []; }
     const b = new THREE.Box3().setFromObject(m), sz = b.getSize(new THREE.Vector3()); m.scale.multiplyScalar(NUWA_H / sz.y);
     const b2 = new THREE.Box3().setFromObject(m), c = b2.getCenter(new THREE.Vector3()); m.position.sub(new THREE.Vector3(c.x, b2.min.y, c.z));
     const wrap = new THREE.Group(); wrap.add(m); wrap.rotation.y = CFG.world?.nuwaRot ?? Math.PI;
@@ -683,7 +685,16 @@ function noiseBurst(dur, f0, f1, vol, type = 'bandpass', delay = 0) {
 function bell(f, dur, vol, delay = 0) { if (!AC) return; const t = AC.currentTime + delay; [[1, 1], [2.76, 0.4], [5.4, 0.18], [8.9, 0.08]].forEach(([h, a]) => { const o = AC.createOscillator(), g = AC.createGain(); o.frequency.value = f * h; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol * a, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + dur / h * 1.5); o.connect(g).connect(AC.destination); o.start(t); o.stop(t + dur * 1.6); }); }
 function drum(vol = 0.6, delay = 0) { if (!AC) return; const t = AC.currentTime + delay; const o = AC.createOscillator(), g = AC.createGain(); o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.35); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9); o.connect(g).connect(AC.destination); o.start(t); o.stop(t + 1); noiseBurst(0.08, 900, 300, vol * 0.25, 'lowpass', delay); }
 function sfxPick(note) { bell(note * 2, 1.6, 0.14); bell(note * 3, 1.2, 0.07, 0.09); }
-function sfxForge() { drum(0.5); noiseBurst(1.6, 150, 700, 0.18, 'lowpass'); }
+// recorded one-shots (ElevenLabs) when shipped, synth otherwise
+function playSfx(key, vol = 1) { const src = CFG.assets?.[key]; if (!src) return null; try { const a = new Audio(src); a.volume = vol; a.play().catch(() => {}); return a; } catch (_) { return null; } }
+function sfxForge() { drum(0.5); if (!playSfx('forge', 0.9)) noiseBurst(1.6, 150, 700, 0.18, 'lowpass'); }
+let endingEl = null, introEl = null;
+function endingMusic(on) {
+  if (!on) { if (endingEl) { endingEl.pause(); endingEl = null; } return; }
+  if (!CFG.assets?.ending) return;
+  if (bgmEl) { const b = bgmEl, v0 = b.volume; let k = 0; const iv = setInterval(() => { k += 0.05; b.volume = Math.max(0, v0 * (1 - k)); if (k >= 1) { clearInterval(iv); b.pause(); b.volume = v0; } }, 100); }
+  endingEl = playSfx('ending', 0.85);
+}
 function sfxCrash() { drum(0.8); drum(0.6, 0.25); noiseBurst(0.6, 1200, 200, 0.2, 'lowpass'); }
 function sfxMend(note) { bell(note, 4, 0.2); bell(note * 1.5, 3.5, 0.12, 0.15); bell(note * 2, 3, 0.1, 0.3); }
 // ---------- narrator (browser speech, low and slow) + tension bed ----------
@@ -954,13 +965,15 @@ function finaleTick(dt) {
     pts.forEach(([x, z], i) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.5, 1, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false })); m.position.set(x, groundFn(x, z), z); m.scale.y = 0.01; scene.add(m); pillars.push({ m, d: i * 0.5 }); drum(0.5, i * 0.5); });
   });
   pillars.forEach(p => { const k = THREE.MathUtils.clamp((t - 2.8 - p.d) / 2.2, 0, 1); const h = 140 * (1 - Math.pow(1 - k, 3)); p.m.scale.y = Math.max(0.01, h); p.m.position.y = groundFn(p.m.position.x, p.m.position.z) + h / 2; if (k > 0 && k < 1) emit(new THREE.Vector3(p.m.position.x, groundFn(p.m.position.x, p.m.position.z) + 0.5, p.m.position.z), 0xffd27a, 3, 3, 2, 1.2); });
-  once(2, 8.5, () => { caption('黑龙兴风作浪\n女娲斩黑龙　风浪平息', 'The black dragon churned the flood; Nüwa slew it, and the waves fell still.', 5000); stinger(); setTimeout(() => { flash(0xffffff); thunderSfx(1); gong(); shake = 1.2; emit(new THREE.Vector3(player.pos.x, G.water + 1, player.pos.z - 25), 0x111111, 300, 14, 4, 2.5); emit(new THREE.Vector3(player.pos.x, G.water + 1, player.pos.z - 25), 0xffe8b0, 120, 10, 6, 1.6); }, 1600); });
+  once(2, 8.5, () => { caption('黑龙兴风作浪\n女娲斩黑龙　风浪平息', 'The black dragon churned the flood; Nüwa slew it, and the waves fell still.', 5000); playSfx('dragon', 1); stinger(); setTimeout(() => { flash(0xffffff); thunderSfx(1); gong(); shake = 1.2; emit(new THREE.Vector3(player.pos.x, G.water + 1, player.pos.z - 25), 0x111111, 300, 14, 4, 2.5); emit(new THREE.Vector3(player.pos.x, G.water + 1, player.pos.z - 25), 0xffe8b0, 120, 10, 6, 1.6); }, 1600); });
   once(3, 14, () => { caption('积芦灰以止淫水', 'She burned the reeds and piled their ash to stop the flood.', 5600); });
   if (t > 14 && t < 21) for (let k = 0; k < 5; k++) emit(new THREE.Vector3(player.pos.x + (Math.random() - 0.5) * 70, 16 + Math.random() * 12, player.pos.z - 15 + (Math.random() - 0.5) * 70), Math.random() < 0.6 ? 0xb0a080 : 0xffc870, 1, 0.4, -1.6, 5);
   G.water = THREE.MathUtils.lerp(G.water, t > 14 ? (CFG.world?.water?.water ?? -2.6) - 4 : G.water, dt * 0.35);
-  once(4, 20.5, () => { flash(0xffffff); if (worldB) { worldB.visible = true; if (splatMesh) splatMesh.visible = false; if (G.furnace) G.furnace.obj.visible = false; G.villagers.forEach(v => v.visible = false); } EL.forEach((e, i) => pluck(e.note, 5, 0.16, i * 0.3)); });
+  once(4, 20.5, () => { flash(0xffffff); if (worldB) { worldB.visible = true; water.visible = false; if (splatMesh) splatMesh.visible = false; if (G.furnace) G.furnace.obj.visible = false; G.villagers.forEach(v => v.visible = false); } EL.forEach((e, i) => pluck(e.note, 5, 0.16, i * 0.3)); });
   once(5, 22, () => caption('苍天补　四极正\n淫水涸　冀州平', 'The sky was mended and the four corners stood; the flood dried and the land was at peace.', 6500));
   once(6, 29.5, () => caption('天地复原　百姓重生\n女娲耗尽了力量　身归天地', 'Heaven and earth were restored and the people lived on. Spent, Nüwa gave herself back to the world.', 7000));
+  // the whole world is her gift: the title page's 礼 seal comes down on it, full size
+  once(7, 36.5, () => { const g = $('giftseal'); g.hidden = false; g.classList.remove('go'); void g.offsetWidth; g.classList.add('go'); setTimeout(() => { drum(0.9); gong(); shake = 0.35; }, 380); });
   if (t > 31 && t < 37) { const k = (t - 31) / 6; nuwaBody.scale.setScalar(Math.max(0.001, 1 - k)); if (Math.random() < 0.8) emit(avatar.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.2, Math.random() * NUWA_H, (Math.random() - 0.5) * 1.2)), Math.random() < 0.5 ? 0xffe0a0 : EL[Math.floor(Math.random() * 5)].color, 3, 1.2, 3, 2.5); }
 }
 let worldB = null;
@@ -1043,7 +1056,9 @@ function update(dt) {
   } else {
     G.endT += dt;
     const k = Math.min(1, G.endT / 9), e = k * k * (3 - 2 * k);
-    if (TP) { nuwaBody.visible = true; finaleTick(dt); camera.position.set(player.pos.x + Math.sin(player.yaw) * (6 + e * 40), THREE.MathUtils.lerp(eye + 2, eye + 45, e), player.pos.z + Math.cos(player.yaw) * (6 + e * 40)); camera.lookAt(THREE.MathUtils.lerp(player.pos.x, 0, e), THREE.MathUtils.lerp(eye, 30, e), THREE.MathUtils.lerp(player.pos.z, -60, e)); avatar.position.y = Math.max(groundFn(player.pos.x, player.pos.z), G.water) + 0.35 + Math.sin(G.t * 1.6) * 0.08; }
+    if (TP) { nuwaBody.visible = true; finaleTick(dt); const FC = CFG.world?.finaleCam; // a narrow canyon needs a hand-placed camera: [x,y,z] from/to and a look target
+      if (FC) { const P = FC.to, L = FC.look; camera.position.set(THREE.MathUtils.lerp(player.pos.x, P[0], e), THREE.MathUtils.lerp(eye + 1.5, P[1], e), THREE.MathUtils.lerp(player.pos.z + 4, P[2], e)); camera.lookAt(THREE.MathUtils.lerp(player.pos.x, L[0], e), THREE.MathUtils.lerp(eye + 1, L[1], e), THREE.MathUtils.lerp(player.pos.z - 10, L[2], e)); }
+      else { camera.position.set(player.pos.x + Math.sin(player.yaw) * (6 + e * 40), THREE.MathUtils.lerp(eye + 2, eye + 45, e), player.pos.z + Math.cos(player.yaw) * (6 + e * 40)); camera.lookAt(THREE.MathUtils.lerp(player.pos.x, 0, e), THREE.MathUtils.lerp(eye, 30, e), THREE.MathUtils.lerp(player.pos.z, -60, e)); } avatar.position.set(player.pos.x, Math.max(groundFn(player.pos.x, player.pos.z), G.water) + 0.35 + Math.sin(G.t * 1.6) * 0.08, player.pos.z); avatar.visible = true; }
     else { camera.position.set(player.pos.x, THREE.MathUtils.lerp(eye, eye + 70, e), player.pos.z + e * 60);
     camera.rotation.order = 'YXZ'; camera.rotation.y = THREE.MathUtils.lerp(player.yaw, 0, e); camera.rotation.x = THREE.MathUtils.lerp(player.pitch, -0.18, e); }
   }
@@ -1268,17 +1283,18 @@ const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2,
 function win() {
   if (G.phase !== 'play') return;
   G.phase = 'won'; G.endT = 0; for (let k = 1; k < 8; k++) G['fin' + k] = 0; G.ores.forEach(o => { o.beam.visible = false; o.light.visible = false; }); $('hud').hidden = true; $('keys') && ($('keys').hidden = true); say('天，合上了。人间，回来了。 · The sky is whole. The world returns.', 6000); document.exitPointerLock?.();
-  $('prompt').classList.remove('on'); $('act').hidden = true;
+  $('prompt').classList.remove('on'); $('act').hidden = true; endingMusic(true);
   EL.forEach((e, i) => pluck(e.note, 5, 0.16, i * 0.35)); EL.forEach(e => pluck(e.note / 2, 6, 0.1, 2));
   crackSegs.forEach(s => { s.mended = 1; emit(s.center, 0xfff2c0, 120, 12, 0, 3); }); flash(0xfff2c0); if (droneG) droneG.gain.linearRampToValueAtTime(0.09, AC.currentTime + 4);
-  G.villagers.forEach((v, i) => setTimeout(() => {
+  if (!TP) G.villagers.forEach((v, i) => setTimeout(() => {
     v.visible = true; const [x, z] = v.userData.spot; v.position.set(x, groundFn(x, z), z); v.rotation.y = Math.PI + (hash(i, 2) - 0.5);
   }, 2500 + i * 180));
-  setTimeout(() => {
+  // the end card waits on the finale's own clock, so slow machines still see every beat
+  const iv = setInterval(() => { if (G.phase !== 'won') return clearInterval(iv); if (G.endT < (TP ? 42 : 12)) return; clearInterval(iv); (() => {
     $('end-time').textContent = fmt(G.t - G.t0); $('end-miss').textContent = G.mistakes;
     $('end-order').textContent = G.chain.map(k => EL.find(e => e.key === k).zh).join(' → ');
-    $('end').hidden = false;
-  }, TP ? 38000 : 12000);
+    $('end').hidden = false; $('giftseal').hidden = true;
+  })(); }, 200);
 }
 function lose() {
   G.phase = 'lost'; document.exitPointerLock?.(); stinger(); narrate('洪水吞没了山谷。一切，都沉入了黑暗。', { rate: 0.7, pitch: 0.4 }); thud();
@@ -1287,20 +1303,20 @@ function lose() {
 }
 
 function resetGame() {
-  G.paused = false; $('pause').hidden = true; G.tut = 0; $('guide').hidden = false;
+  endingMusic(false); $('giftseal').hidden = true; G.paused = false; $('pause').hidden = true; G.tut = 0; $('guide').hidden = false;
   G.phase = 'play'; G.water = CFG.world?.water?.water ?? -2.6; G.rate = CFG.world?.water?.rate ?? 0.034; G.carrying = null; G.forging = 0; G.forgeEl = null;
   G.chain = []; G.mistakes = 0; throws.length = 0; G.restoreAnim = [0, 0, 0, 0, 0]; U.uAll.value = 0; G.t0 = G.t; flights.length = 0;
   for (const o of G.ores) { o.taken = false; o.used = false; o.stone.visible = true; o.stone.scale.setScalar(1); o.stone.position.copy(o.home); o.beam.visible = true; o.light.visible = true; }
   crackSegs.forEach(s => { s.mended = 0; s.el = null; s.mesh.material.color.set(0xfff6e0); if (s.rib) s.rib.parts.forEach(pp => { pp.core.material.color.set(0xffe2b0); pp.glow.material.color.set(0xff4a20); }); });
-  G.villagers.forEach(v => v.visible = false); G.cut = false; AV.fly = null; AV.camInit = false; nuwaBody.scale.setScalar(1); pillars.splice(0).forEach(p => scene.remove(p.m)); if (worldB) { worldB.visible = false; if (splatMesh) splatMesh.visible = true; if (G.furnace) G.furnace.obj.visible = true; }
+  G.villagers.forEach(v => v.visible = false); G.cut = false; AV.fly = null; AV.camInit = false; nuwaBody.scale.setScalar(1); pillars.splice(0).forEach(p => scene.remove(p.m)); if (worldB) { worldB.visible = false; water.visible = true; if (splatMesh) splatMesh.visible = true; if (G.furnace) G.furnace.obj.visible = true; }
   player.pos.set(START_POS.x, groundFn(START_POS.x, START_POS.y), START_POS.y); player.yaw = 0; player.pitch = 0.12;
   $('end').hidden = true; $('lose').hidden = true; $('intro').hidden = true; $('hud').hidden = false;
-  G.n50 = G.n80 = 0; hudRing(); say('第一步：跟着金色光点找到原石，点击抓起 · Follow the golden lights and grab an ore', 7000);
+  G.n50 = G.n80 = 0; hudRing(); say(TP ? '第一步：跟着金色光点走到发光的石头旁，按 E 或左键拾起 · Follow the golden dots to a glowing stone, then press E or click' : '第一步：跟着金色光点找到原石，点击抓起 · Follow the golden lights and grab an ore', 7000);
 }
 function startGame() { audioInit(); musicInit(); bgmPlay(); resetGame(); G.started = false; setTimeout(() => G.started = true, 400); }
 let seenIntro = false;
 async function cinematic() {
-  audioInit(); musicInit(); bgmPlay(); G.phase = 'cine'; G.cineT = 0; $('intro').hidden = true; const c = $('cine'); c.hidden = false; const line = $('cine-line');
+  audioInit(); musicInit(); introEl = playSfx('intro', 0.9); if (!introEl) bgmPlay(); G.phase = 'cine'; G.cineT = 0; $('intro').hidden = true; const c = $('cine'); c.hidden = false; const line = $('cine-line');
   const lines = TP ? [['远古之时　共工与颛顼争帝\n共工战败　怒触不周山', 'In the remote past Gonggong fought Zhuanxu for heaven\'s throne, lost, and in his rage struck Mount Buzhou.', 5200], ['天柱折　天塌了一角\n大地裂开深沟', 'The pillar of heaven broke; a corner of the sky fell in and the earth split open.', 4800], ['天火不灭　洪水不息\n猛兽毒虫残害百姓', 'Fire would not die, the flood would not stop, and beasts preyed on the people.', 5000], ['女娲看见人间受苦\n决心修补苍天', 'Nüwa saw the people suffer and resolved to mend the sky.', 4400], ['走遍山川　拣选五色石\n按五行相生　木火土金水', 'Search the valley for the five-coloured stones, in the order wood, fire, earth, metal, water.', 5200]]
     : [['往古之时\n四极废　九州裂', 'In ancient times, the four pillars broke and the nine lands split.', 4500], ['天　塌了', 'The sky fell.', 3200], ['洪水从天的裂缝里倾泻而下\n世界失去了颜色', 'A flood poured through the crack, and the world lost its colour.', 5500], ['只有你　女娲\n能把天补上', 'Only you, Nüwa, can mend the sky.', 4200], ['在洪水吞没山谷之前\n找到五行之石', 'Find the five elemental stones before the flood takes the valley.', 4800]];
   let skip = false; c.onclick = () => { skip = true; };
@@ -1310,6 +1326,7 @@ async function cinematic() {
     for (let k = 0; k < ms / 100 && !skip; k++) await new Promise(r => setTimeout(r, 100));
   }
   try { speechSynthesis.cancel(); } catch (_) {}
+  if (introEl) { const a = introEl; introEl = null; let k = 0; const v0 = a.volume; const iv = setInterval(() => { k += 0.08; a.volume = Math.max(0, v0 * (1 - k)); if (k >= 1) { clearInterval(iv); a.pause(); } }, 100); bgmPlay(); }
   c.hidden = true; $('sub').classList.remove('on'); seenIntro = true; audioInit(); musicInit(); resetGame(); G.started = false; setTimeout(() => G.started = true, 400);
 }
 $('start').addEventListener('click', () => seenIntro ? startGame() : cinematic());
@@ -1335,4 +1352,4 @@ addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; cam
 })();
 
 // test / recording hooks
-window.__butian = { NEXT, AV, crackSegs, hand, handL, FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };
+window.__butian = { NEXT, AV, wb: () => worldB && { vis: worldB.visible, ready: !!worldB.isInitialized || true }, crackSegs, hand, handL, FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };
