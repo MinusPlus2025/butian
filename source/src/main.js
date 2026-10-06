@@ -483,7 +483,10 @@ function audioInit() {
   s2.connect(f2).connect(floodGain).connect(AC.destination); s2.start();
 }
 let floodGain = null, rainHiss = null;
-function rainInit() { if (!AC || rainHiss) return; const n = AC.sampleRate * 2, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; const src = AC.createBufferSource(); src.buffer = b; src.loop = true; let last = 0; for (let i = 0; i < n; i++) { last = 0.97 * last + 0.03 * d[i]; d[i] = last * 6; } const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 400; const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3500; rainHiss = AC.createGain(); rainHiss.gain.value = 0.15; src.connect(hp).connect(lp).connect(rainHiss).connect(AC.destination); src.start(); }
+let rainEl = null, thunderEls = [];
+function rainInit() {
+  if (CFG.assets?.rain && !rainEl && AC) { rainEl = new Audio(CFG.assets.rain); rainEl.loop = true; rainEl.volume = 0.6; rainEl.play().catch(() => {}); rainHiss = { gain: { value: 0 } }; }
+  if (!AC || rainHiss) return; const n = AC.sampleRate * 2, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; const src = AC.createBufferSource(); src.buffer = b; src.loop = true; let last = 0; for (let i = 0; i < n; i++) { last = 0.97 * last + 0.03 * d[i]; d[i] = last * 6; } const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 400; const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3500; rainHiss = AC.createGain(); rainHiss.gain.value = 0.15; src.connect(hp).connect(lp).connect(rainHiss).connect(AC.destination); src.start(); }
 function pluck(freq, dur = 2.2, vol = 0.22, delay = 0) {
   if (!AC) return; const t0 = AC.currentTime + delay;
   [1, 2, 3.01].forEach((h, k) => {
@@ -778,7 +781,7 @@ function update(dt) {
 
   updateAmbience(dt); updateParticles(dt); if (G.phase === 'play') musicTick(dt, fl);
   // hand: idle sway, walk bob, reach on click, hidden outside play
-  hand.visible = G.phase === 'play'; handL.visible = hand.visible && !!G.realHands;
+  hand.visible = G.phase === 'play' && !CFG.world?.hideHands; handL.visible = hand.visible && !!G.realHands;
   reachT = Math.max(0, reachT - dt);
   const rk = Math.sin(Math.min(1, (0.35 - reachT) / 0.35) * Math.PI) * (reachT > 0 ? 1 : 0);
   hand.position.set(HAND_REST.x - rk * 0.12 + Math.sin(G.t * 1.3) * 0.006, HAND_REST.y + rk * 0.12 + Math.abs(Math.sin(G.walkT || 0)) * -0.025 + (G.carrying ? 0.05 : 0), HAND_REST.z - rk * 0.35);
@@ -875,7 +878,7 @@ const rainSeed = Array.from({ length: RAIN_N }, () => [Math.random() * 40 - 20, 
 let boltT = 4, boltFlash = 0;
 function updateAmbience(dt) {
   rainInit();
-  const amt = G.phase === 'won' ? 0 : 1 - (G.chain?.length || 0) / 6; rain.material.opacity = 0.55 * amt; if (rainHiss) rainHiss.gain.value = 0.16 * amt; if (AC && amt > 0.05 && G.phase !== 'title') for (let k = 0; k < 2; k++) if (Math.random() < dt * 18 * amt) noiseBurst(0.03, 1500 + Math.random() * 3000, 800, 0.05 + Math.random() * 0.06, 'bandpass', Math.random() * 0.05); rain.visible = amt > 0.02;
+  const amt = G.phase === 'won' ? 0 : 1 - (G.chain?.length || 0) / 6; rain.material.opacity = 0.55 * amt; if (rainEl) rainEl.volume = Math.min(1, 0.7 * amt); if (rainHiss) rainHiss.gain.value = 0.16 * amt; if (!rainEl && AC && amt > 0.05 && G.phase !== 'title') for (let k = 0; k < 2; k++) if (Math.random() < dt * 18 * amt) noiseBurst(0.03, 1500 + Math.random() * 3000, 800, 0.05 + Math.random() * 0.06, 'bandpass', Math.random() * 0.05); rain.visible = amt > 0.02;
   const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
   for (let i = 0; i < RAIN_N; i++) {
     const r = rainSeed[i]; r[1] -= r[3] * dt; if (r[1] < -4) { r[1] = 20 + Math.random() * 5; r[0] = Math.random() * 40 - 20; r[2] = Math.random() * 40 - 20; }
@@ -885,7 +888,7 @@ function updateAmbience(dt) {
   rainGeo.attributes.position.needsUpdate = true;
   if (G.phase === 'play' || G.phase === 'cine') {
     boltT -= dt;
-    if (boltT <= 0) { boltT = (3 + Math.random() * 5) * (0.6 + (G.chain?.length || 0) * 0.3); boltFlash = 1.4; flash(0xdfe6ff); setTimeout(() => { flash(0xbfd0ff); boltFlash = 1; }, 120); setTimeout(() => { noiseBurst(0.35, 3000, 500, 0.5); drum(0.6); noiseBurst(3.5, 400, 40, 0.55, 'lowpass', 0.1); shake = Math.max(shake, 0.2); }, 250 + Math.random() * 600);
+    if (boltT <= 0) { boltT = (3 + Math.random() * 5) * (0.6 + (G.chain?.length || 0) * 0.3); boltFlash = 1.4; flash(0xdfe6ff); setTimeout(() => { flash(0xbfd0ff); boltFlash = 1; }, 120); setTimeout(() => { if (CFG.assets?.thunder) { const t = new Audio(CFG.assets.thunder); t.volume = 0.9; t.play().catch(() => {}); } else { noiseBurst(0.35, 3000, 500, 0.5); drum(0.6); noiseBurst(3.5, 400, 40, 0.55, 'lowpass', 0.1); } shake = Math.max(shake, 0.2); }, 250 + Math.random() * 600);
       const c = crackSegs[Math.floor(Math.random() * crackSegs.length)]; if (c && !c.mended) emit(c.center, 0xdfe8ff, 60, 6, 0, 1.2); }
   }
   if ((G.phase === 'play' || G.phase === 'cine') && Math.random() < dt * 0.12 * (1 - (G.chain?.length || 0) / 5)) { shake = Math.max(shake, 0.35); drum(0.25); noiseBurst(1.5, 120, 50, 0.25, 'lowpass'); say('天又裂开一道口子…… · The sky cracks further…', 2200); }
