@@ -771,7 +771,7 @@ function update(dt) {
     camera.rotation.order = 'YXZ'; camera.rotation.y = THREE.MathUtils.lerp(player.yaw, 0, e); camera.rotation.x = THREE.MathUtils.lerp(player.pitch, -0.18, e);
   }
 
-  updateParticles(dt); if (G.phase === 'play') musicTick(dt, fl);
+  updateAmbience(dt); updateParticles(dt); if (G.phase === 'play') musicTick(dt, fl);
   // hand: idle sway, walk bob, reach on click, hidden outside play
   hand.visible = G.phase === 'play'; handL.visible = hand.visible && !!G.realHands;
   reachT = Math.max(0, reachT - dt);
@@ -847,6 +847,31 @@ function update(dt) {
     $('act').hidden = !p || !!G.forging;
     $('timer').textContent = fmt(G.t - G.t0);
   }
+}
+// ---------- ambience: rain, drifting ash, lightning ----------
+const RAIN_N = 1400;
+const rainGeo = new THREE.BufferGeometry(); const rainPos = new Float32Array(RAIN_N * 6);
+rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0xaab4c0, transparent: true, opacity: 0.35, depthWrite: false, fog: false }));
+rain.frustumCulled = false; scene.add(rain);
+const rainSeed = Array.from({ length: RAIN_N }, () => [Math.random() * 40 - 20, Math.random() * 25, Math.random() * 40 - 20, 18 + Math.random() * 10]);
+let boltT = 4, boltFlash = 0;
+function updateAmbience(dt) {
+  const amt = G.phase === 'won' ? 0 : 1 - (G.chain?.length || 0) / 6; rain.material.opacity = 0.35 * amt; rain.visible = amt > 0.02;
+  const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+  for (let i = 0; i < RAIN_N; i++) {
+    const r = rainSeed[i]; r[1] -= r[3] * dt; if (r[1] < -4) { r[1] = 20 + Math.random() * 5; r[0] = Math.random() * 40 - 20; r[2] = Math.random() * 40 - 20; }
+    const x = cx + r[0] + r[1] * 0.12, y = cy + r[1] - 6, z = cz + r[2]; const o = i * 6;
+    rainPos[o] = x; rainPos[o + 1] = y; rainPos[o + 2] = z; rainPos[o + 3] = x - 0.08; rainPos[o + 4] = y - 0.7; rainPos[o + 5] = z;
+  }
+  rainGeo.attributes.position.needsUpdate = true;
+  if (G.phase === 'play' || G.phase === 'cine') {
+    boltT -= dt;
+    if (boltT <= 0) { boltT = (6 + Math.random() * 8) * (0.6 + (G.chain?.length || 0) * 0.25); boltFlash = 1; flash(0x9fb4ff); setTimeout(() => { drum(0.35); noiseBurst(2.2, 300, 60, 0.25, 'lowpass'); }, 300 + Math.random() * 700);
+      const c = crackSegs[Math.floor(Math.random() * crackSegs.length)]; if (c && !c.mended) emit(c.center, 0xdfe8ff, 60, 6, 0, 1.2); }
+  }
+  boltFlash = Math.max(0, boltFlash - dt * 3); renderer.toneMappingExposure = 1.05 + boltFlash * 0.6;
+  if (G.t % 0.15 < dt && (G.phase === 'play' || G.phase === 'cine')) emit(new THREE.Vector3(cx + (Math.random() - 0.5) * 30, cy + Math.random() * 6, cz + (Math.random() - 0.5) * 30), 0x8a8478, 2, 0.4, 0.2, 4);
 }
 const DEMO = /[?&]demo/.test(location.search);
 const AP = { stuckT: 0, last: null, wait: 0, wrongDone: false };
