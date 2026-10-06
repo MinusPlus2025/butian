@@ -446,6 +446,16 @@ async function setupHands() {
   if (ml) { const bl = new THREE.Box3().setFromObject(ml), sl = bl.getSize(new THREE.Vector3()); ml.position.sub(bl.getCenter(new THREE.Vector3())); wrapL = new THREE.Group(); wrapL.add(ml); wrapL.scale.setScalar((H.size || 0.42) / Math.max(sl.x, sl.y, sl.z)); if (H.rot) wrapL.rotation.set(...H.rot); }
   else { wrapL = wrapR.clone(); wrapL.scale.x *= -1; } handL.add(wrapL); handL.add(new THREE.PointLight(0xfff0d0, 0.5, 2)); G.realHands = H.left !== false;
   G.handWrap = wrapR; G.palm = 0; if (H.tilt) hand.rotation.set(...H.tilt);
+  if (FPV && H.autoPalm !== false) {
+    // fingertips point forward (-z); the palm is the highest surface a little behind them
+    hand.updateMatrixWorld(true); const inv = new THREE.Matrix4().copy(wrapR.matrix), v = new THREE.Vector3(), P = [];
+    m.updateMatrixWorld(true); m.traverse(o => { if (!o.isMesh) return; const a = o.geometry.attributes.position, step = Math.max(1, Math.floor(a.count / 40000));
+      for (let i = 0; i < a.count; i += step) { v.fromBufferAttribute(a, i).applyMatrix4(o.matrixWorld); hand.worldToLocal(v); P.push(v.x, v.y, v.z); } });
+    // the upturned palm is the top of the model: average the highest few millimetres and rest the stone on it
+    let yMax = -1e9; for (let i = 1; i < P.length; i += 3) yMax = Math.max(yMax, P[i]);
+    let sx = 0, sz = 0, n = 0; for (let i = 0; i < P.length; i += 3) if (P[i + 1] > yMax - 0.025) { sx += P[i]; sz += P[i + 2]; n++; }
+    if (n) { const r = (H.holdScale ?? 0.07) * 0.5; G.palmHold = [sx / n, yMax + r, sz / n]; }
+  }
 }
 // a torn, glowing crack across the sky: jagged ribbons (white-hot core + red glow) that can tear open and heal
 const ribTex = (() => { const c = document.createElement('canvas'); c.width = 4; c.height = 64; const g = c.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, 64); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 4, 64); return new THREE.CanvasTexture(c); })();
@@ -465,7 +475,13 @@ function ribbon(pts, w, color, opacity, blending = THREE.AdditiveBlending, order
 function jag(a, b, n, amp) { const out = []; for (let i = 0; i <= n; i++) { const t = i / n, e = Math.sin(t * Math.PI); out.push(new THREE.Vector3(a.x + (b.x - a.x) * t + (Math.random() - 0.5) * 0.6, a.y + (b.y - a.y) * t + (Math.random() < 0.5 ? 1 : -1) * amp * Math.pow(Math.random(), 1.5) * (i && i < n ? 1 : 0.3), a.z + (b.z - a.z) * t + (Math.random() - 0.5) * 1.5 * e)); } return out; }
 const bolts = [];
 // ---------- the world breaking: tremors, falling rock, opening fissures, debris riding the flood ----------
-const rockGeo = new THREE.DodecahedronGeometry(1, 0), rockMat = new THREE.MeshStandardMaterial({ color: 0x4a4744, roughness: 0.95, flatShading: true });
+// irregular boulders: a subdivided sphere pushed around by layered noise, a few shapes reused
+const rockGeos = [0, 1, 2, 3].map(seed => { const g = new THREE.IcosahedronGeometry(1, 3), a = g.attributes.position, v = new THREE.Vector3(), col = [];
+  const f = (x, y, z) => Math.sin(x * 1.7 + seed * 3.1) * Math.sin(y * 2.3 + seed) * Math.sin(z * 1.9 - seed * 2.2) * 0.22 + Math.sin(x * 4.1 + y * 3.7 + seed) * 0.07 + Math.sin(z * 5.3 - x * 2.9 + seed * 5) * 0.05;
+  const sq = [0.8 + seed * 0.12, 0.65 + (seed % 2) * 0.2, 1.0];
+  for (let i = 0; i < a.count; i++) { v.fromBufferAttribute(a, i); const d = 1 + f(v.x, v.y, v.z); v.multiplyScalar(d); v.set(v.x * sq[0], v.y * sq[1], v.z * sq[2]); if (v.y < -0.35) v.y = -0.35 + (v.y + 0.35) * 0.3; a.setXYZ(i, v.x, v.y, v.z); const s2 = 0.75 + d * 0.3 + Math.sin(v.x * 9 + v.z * 7) * 0.04; col.push(0.3 * s2, 0.285 * s2, 0.27 * s2); }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals(); return g; });
+const rockMat = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.97 });
 const rocks = [], fissures = [], logs = [];
 const fisMat = new THREE.MeshBasicMaterial({ color: 0xff6a1a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
 function quake(big = 1) {
@@ -475,7 +491,7 @@ function quake(big = 1) {
   // rocks break off the valley walls and tumble down near the player
   for (let i = 0; i < 4 + big * 3; i++) {
     const side = Math.random() < 0.5 ? B[0] - 2 : B[1] + 2, z = player.pos.z + (Math.random() - 0.6) * 30;
-    const m = new THREE.Mesh(rockGeo, rockMat); m.scale.setScalar(0.4 + Math.random() * 1.1); m.position.set(side + (Math.random() - 0.5) * 4, player.pos.y + 14 + Math.random() * 10, z);
+    const m = new THREE.Mesh(rockGeos[(Math.random() * rockGeos.length) | 0], rockMat); m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6); m.scale.setScalar(0.4 + Math.random() * 1.1); m.position.set(side + (Math.random() - 0.5) * 4, player.pos.y + 14 + Math.random() * 10, z);
     scene.add(m); rocks.push({ m, v: new THREE.Vector3((side < player.pos.x ? 1 : -1) * (2 + Math.random() * 3), -2, (Math.random() - 0.5) * 2), spin: new THREE.Vector3(Math.random() * 6, Math.random() * 6, 0), delay: Math.random() * 1.5 });
   }
   // the ground splits open in front of the player, glowing from below
@@ -508,7 +524,7 @@ function updateQuake(dt) {
     if (f.t > 14) { scene.remove(f.m); f.m.geometry.dispose(); fissures.splice(i, 1); }
   }
   // broken timber and branches carried down the valley by the flood
-  if (!logs.length && G.furnace) for (let i = 0; i < 18; i++) { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 1.6 + Math.random() * 2, 6).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3b2c1f, roughness: 1, flatShading: true })); m.rotation.y = Math.random() * Math.PI; scene.add(m); logs.push({ m, x: (Math.random() - 0.5) * 40, z: (Math.random() - 0.5) * 140, sp: 2.5 + Math.random() * 2.5, ph: Math.random() * 6 }); }
+  if (!logs.length && G.furnace) for (let i = 0; i < 18; i++) { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.1 + Math.random() * 0.05, 0.14 + Math.random() * 0.05, 1.6 + Math.random() * 2, 12, 3).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3b2c1f, roughness: 1 })); m.rotation.y = Math.random() * Math.PI; scene.add(m); logs.push({ m, x: (Math.random() - 0.5) * 40, z: (Math.random() - 0.5) * 140, sp: 2.5 + Math.random() * 2.5, ph: Math.random() * 6 }); }
   for (const l of logs) {
     l.z += l.sp * dt; if (l.z > 70) l.z -= 140;
     l.m.visible = water.visible && G.phase !== 'won' && G.phase !== 'title';
@@ -888,8 +904,10 @@ function aimAt(target, maxD, loose = 1) {
   const d = tmpA.copy(target).sub(camera.position); const dist = d.length(); if (dist > maxD) return false;
   camera.getWorldDirection(tmpB); return d.normalize().dot(tmpB) > Math.cos((dist < 6 ? 0.5 : 0.3) * loose);
 }
-const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
+const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3(), tmpQ = new THREE.Quaternion();
 const throws = [];
+// the stone resting in the first-person palm draws over the hand, like any held item in a first-person game
+function setOnTop(o, on) { if (!!o.onTop === on) return; o.onTop = on; o.stone.traverse(m => { if (m.isMesh) { m.material.depthTest = !on; m.renderOrder = on ? 2000 : 0; } }); }
 function handAction() {
   if (G.phase !== 'play' || G.paused || G.forging || throws.length || G.cut) return;
   if (TP) {
@@ -897,7 +915,7 @@ function handAction() {
     if (!G.carrying) { const o = nearestOreTP(); if (o) { G.grabFrom = o.stone.position.clone(); G.grabT = 0; return interact(o); } say('走到发光的五行石旁边，再按 E 或左键 · Walk up to a glowing stone, then press E or click', 2400); }
     else if (furnaceDist() < (CFG.world?.throwRange ?? 7)) {
       const o = G.carrying; G.carrying = null; const fpos = new THREE.Vector3(FURNACE_POS.x, G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.8, FURNACE_POS.y);
-      throws.push({ o, from: o.stone.position.clone(), to: fpos, t: 0 }); noiseBurst(0.35, 300, 900, 0.12, 'lowpass');
+      setOnTop(o, false); throws.push({ o, from: o.stone.position.clone(), to: fpos, t: 0 }); noiseBurst(0.35, 300, 900, 0.12, 'lowpass');
     } else say('带着石头走到铜炉旁边 · Carry it to the bronze furnace', 2000);
     return;
   }
@@ -984,7 +1002,7 @@ function nuwaFlight(f, i, dt) {
   else {
     const k = Math.min(1, (A.t - up - rise - hold) / down), e = k * k * (3 - 2 * k);
     avatar.position.lerpVectors(f.to, tmpV.set(A.back.x, ground(), A.back.z), e);
-    if (k >= 1) { flights.splice(i, 1); AV.fly = null; G.cut = false; player.pos.copy(A.back); if (G.chain.length === 5) win(); }
+    if (k >= 1) { flights.splice(i, 1); AV.fly = null; G.cut = false; player.pos.copy(A.back); player.yaw = A.yaw; player.pitch = 0.05; AV.blend = 1; AV.blendPos = camera.position.clone(); AV.blendQ = camera.quaternion.clone(); if (G.chain.length === 5) win(); }
   }
   avatar.rotation.y = AV.face; avatar.rotation.x = THREE.MathUtils.lerp(avatar.rotation.x, A.t > up && A.t < up + rise ? -0.35 : 0, Math.min(1, dt * 3)); avatar.rotation.z = Math.sin(A.t * 1.3) * 0.05; // a static model still drifts and banks a little
   // camera: behind and below Nüwa, keeping the crack in frame
@@ -1015,6 +1033,10 @@ function updateAvatar(dt, eye) {
     nuwaBody.visible = false; AV.face = player.yaw;
     camera.position.set(player.pos.x, eye + Math.abs(Math.sin(G.walkT || 0)) * 0.06, player.pos.z);
     camera.rotation.order = 'YXZ'; camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
+    if (AV.blend > 0) { // glide back from the flight camera into Nüwa's eyes instead of cutting
+      AV.blend = Math.max(0, AV.blend - dt * 1.4); const k = 1 - AV.blend, e = k * k * (3 - 2 * k);
+      camera.position.lerpVectors(AV.blendPos, tmpB.copy(camera.position), e); camera.quaternion.slerpQuaternions(AV.blendQ, tmpQ.copy(camera.quaternion), e);
+    }
     AV.camPos.copy(camera.position); AV.camInit = true; return;
   }
   const phi = THREE.MathUtils.clamp(0.28 - player.pitch * 0.8, -0.15, 1.1), dist = CFG.world?.camDist ?? 6;
@@ -1049,7 +1071,7 @@ function finaleTick(dt) {
   once(5, 22, () => caption('苍天补　四极正\n淫水涸　冀州平', 'The sky was mended and the four corners stood; the flood dried and the land was at peace.', 6500));
   once(6, 29.5, () => caption('天地复原　百姓重生\n女娲耗尽了力量　身归天地', 'Heaven and earth were restored and the people lived on. Spent, Nüwa gave herself back to the world.', 7000));
   // the whole world is her gift: the title page's 礼 seal comes down on it, full size
-  once(7, 36.5, () => { const g = $('giftseal'); g.hidden = false; g.classList.remove('go'); void g.offsetWidth; g.classList.add('go'); setTimeout(() => { drum(0.9); gong(); shake = 0.35; }, 380); });
+  once(7, 36.5, () => caption('这片山河　是女娲留给人间的礼物', 'This world is the gift Nüwa left to us.', 6000));
   if (t > 31 && t < 37) { const k = (t - 31) / 6; nuwaBody.scale.setScalar(Math.max(0.001, 1 - k)); if (Math.random() < 0.8) emit(avatar.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.2, Math.random() * NUWA_H, (Math.random() - 0.5) * 1.2)), Math.random() < 0.5 ? 0xffe0a0 : EL[Math.floor(Math.random() * 5)].color, 3, 1.2, 3, 2.5); }
 }
 let worldB = null;
@@ -1154,7 +1176,7 @@ function update(dt) {
   hand.visible = G.phase === 'play' && !CFG.world?.hideHands && (!TP || (FPV && !AV.fly && !G.cut)); handL.visible = hand.visible && !!G.realHands;
   reachT = Math.max(0, reachT - dt);
   const rk = Math.sin(Math.min(1, (0.35 - reachT) / 0.35) * Math.PI) * (reachT > 0 ? 1 : 0);
-  hand.position.set(HAND_REST.x - rk * 0.12 + Math.sin(G.t * 1.3) * 0.006, HAND_REST.y + rk * 0.12 + Math.abs(Math.sin(G.walkT || 0)) * -0.025 + (G.carrying ? 0.05 : 0), HAND_REST.z - rk * 0.35);
+  hand.position.set(HAND_REST.x - rk * (FPV ? 0.04 : 0.12) + Math.sin(G.t * 1.3) * 0.006, HAND_REST.y + rk * (FPV ? 0.04 : 0.12) + Math.abs(Math.sin(G.walkT || 0)) * -0.025 + (G.carrying ? 0.05 : 0), HAND_REST.z - rk * (FPV ? 0.12 : 0.35));
   if (G.realHands) handL.position.set(-HAND_REST.x + rk * 0.04 - Math.sin(G.t * 1.1) * 0.006, HAND_REST.y + Math.abs(Math.sin((G.walkT || 0) + 1.5)) * -0.025 + (G.carrying ? 0.03 : -0.04), HAND_REST.z + 0.04);
   if (G.handWrap && FPV) { G.handWrap.rotation.z = -rk * 0.15; }
   else if (G.handWrap) { const H = CFG.world?.hand || {}; G.palm += ((G.carrying && G.grabT > 0.5 ? 1 : 0) - G.palm) * Math.min(1, dt * 9); const a = H.idleY ?? -1.5708, b = H.holdY ?? 0; G.handWrap.rotation.y = a + (b - a) * G.palm; G.handWrap.rotation.z = Math.sin(G.palm * Math.PI) * 0.35 - rk * 0.25; }
@@ -1169,11 +1191,11 @@ function update(dt) {
     if (o.used) continue;
     if (o === G.carrying) {
       camera.getWorldDirection(tmpV);
-      const ho = CFG.world?.hand?.hold || [0, 0.12, -0.12]; const hp = FPV && !AV.fly ? hand.localToWorld(G.handWrap ? tmpA.set(ho[0], ho[1], ho[2]) : tmpA.set(0, 0.11, -0.1)) : TP ? avatar.localToWorld(tmpA.set(0, NUWA_H * 0.62 + Math.sin(G.t * 3) * 0.05, -0.75)) : hand.localToWorld(tmpA.set(ho[0], ho[1], ho[2]));
+      const ho = CFG.world?.hand?.hold || [0, 0.12, -0.12]; const hp = FPV && !AV.fly ? hand.localToWorld(G.palmHold ? tmpA.fromArray(G.palmHold) : G.handWrap ? tmpA.set(ho[0], ho[1], ho[2]) : tmpA.set(0, 0.11, -0.1)) : TP ? avatar.localToWorld(tmpA.set(0, NUWA_H * 0.62 + Math.sin(G.t * 3) * 0.05, -0.75)) : hand.localToWorld(tmpA.set(ho[0], ho[1], ho[2]));
       if (G.grabT < 1) { G.grabT = Math.min(1, (G.grabT || 0) + dt * 4); o.stone.position.lerpVectors(G.grabFrom, hp, easeOut(G.grabT)); o.stone.scale.setScalar(THREE.MathUtils.lerp(1, (FPV && !AV.fly ? (CFG.world?.hand?.holdScale ?? 0.11) : TP ? 0.38 : CFG.world?.hand?.holdScale ?? 0.16), G.grabT)); }
       else { o.stone.position.copy(hp); o.stone.scale.setScalar((FPV && !AV.fly ? (CFG.world?.hand?.holdScale ?? 0.11) : TP ? 0.38 : CFG.world?.hand?.holdScale ?? 0.16)); if (TP && Math.random() < dt * 20) emit(hp, o.el.color, 1, 0.3, 0.4, 0.6); }
-      o.stone.rotation.y += dt;
-    } else if (!o.taken) { const hv = o === G.hover; o.stone.rotation.y += dt * (hv ? 2.2 : 0.5); o.stone.position.y = o.home.y + Math.sin(G.t * 1.6 + o.home.x) * 0.15 + (hv ? 0.25 : 0); o.stone.scale.setScalar(THREE.MathUtils.lerp(o.stone.scale.x, hv ? 1.18 + Math.sin(G.t * 8) * 0.04 : 1, Math.min(1, dt * 10))); o.beam.material.opacity = hv ? 0.42 : 0.16 + Math.sin(G.t * 2 + o.home.z) * 0.06; if (Math.random() < dt * 5) emit(tmpA.set(o.home.x + (Math.random() - 0.5) * 0.8, o.home.y + 0.3, o.home.z + (Math.random() - 0.5) * 0.8), o.el.color, 1, 0.15, 3, 2.2); }
+      o.stone.rotation.y += dt; setOnTop(o, FPV && !AV.fly && G.grabT >= 1);
+    } else if (!o.taken) { setOnTop(o, false); const hv = o === G.hover; o.stone.rotation.y += dt * (hv ? 2.2 : 0.5); o.stone.position.y = o.home.y + Math.sin(G.t * 1.6 + o.home.x) * 0.15 + (hv ? 0.25 : 0); o.stone.scale.setScalar(THREE.MathUtils.lerp(o.stone.scale.x, hv ? 1.18 + Math.sin(G.t * 8) * 0.04 : 1, Math.min(1, dt * 10))); o.beam.material.opacity = hv ? 0.42 : 0.16 + Math.sin(G.t * 2 + o.home.z) * 0.06; if (Math.random() < dt * 5) emit(tmpA.set(o.home.x + (Math.random() - 0.5) * 0.8, o.home.y + 0.3, o.home.z + (Math.random() - 0.5) * 0.8), o.el.color, 1, 0.15, 3, 2.2); }
   }
   // forging
   if (G.forging) {
@@ -1384,7 +1406,7 @@ function win() {
   const iv = setInterval(() => { if (G.phase !== 'won') return clearInterval(iv); if (G.endT < (TP ? 42 : 12)) return; clearInterval(iv); (() => {
     $('end-time').textContent = fmt(G.t - G.t0); $('end-miss').textContent = G.mistakes;
     $('end-order').textContent = G.chain.map(k => EL.find(e => e.key === k).zh).join(' → ');
-    $('end').hidden = false; $('giftseal').hidden = true;
+    const E = $('end'); E.classList.remove('show'); E.hidden = false; requestAnimationFrame(() => requestAnimationFrame(() => E.classList.add('show')));
   })(); }, 200);
 }
 function lose() {
