@@ -531,7 +531,7 @@ async function setupProps() {
 
 // ---------- input ----------
 const keys = {};
-addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'KeyE' && !G.paused) handAction(); if (e.code === 'Space' && G.phase === 'play' && !G.paused && !G.cut && !(player.jy > 0.01)) { player.jv = 7.5; noiseBurst(0.12, 500, 250, 0.08, 'lowpass'); e.preventDefault(); } if ((e.code === 'Escape' || e.code === 'KeyP') && G.phase === 'play' && !locked) setPause(!G.paused); });
+addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'KeyL') document.querySelector('.langbtn')?.click(); if (e.code === 'KeyE' && !G.paused) handAction(); if (e.code === 'Space' && G.phase === 'play' && !G.paused && !G.cut && !(player.jy > 0.01)) { player.jv = 7.5; noiseBurst(0.12, 500, 250, 0.08, 'lowpass'); e.preventDefault(); } if ((e.code === 'Escape' || e.code === 'KeyP') && G.phase === 'play' && !locked) setPause(!G.paused); });
 addEventListener('keyup', e => { keys[e.code] = false; });
 let locked = false, dragging = false, lastX = 0, lastY = 0;
 document.addEventListener('pointerlockchange', () => { const was = locked; locked = document.pointerLockElement === canvas; if (was && !locked && G.phase === 'play' && matchMedia('(pointer: fine)').matches) setPause(true); });
@@ -672,7 +672,7 @@ function updateParticles(dt) {
   }
   pGeo.attributes.position.needsUpdate = true; pGeo.attributes.color.needsUpdate = true;
 }
-function banner(big, small = '', color = '#ffe9a8') { const b = document.getElementById('banner'); b.querySelector('b').textContent = big; b.querySelector('i').textContent = small; b.style.color = color; b.classList.remove('go'); void b.offsetWidth; b.classList.add('go'); }
+function banner(big, small = '', color = '#ffe9a8') { const b = document.getElementById('banner'); b.querySelector('b').textContent = LANG === 'en' && small ? small : big; b.querySelector('i').textContent = LANG === 'both' ? small : ''; b.style.color = color; b.classList.remove('go'); void b.offsetWidth; b.classList.add('go'); }
 let fovKick = 0;
 function noiseBurst(dur, f0, f1, vol, type = 'bandpass', delay = 0) {
   if (!AC) return; const t = AC.currentTime + delay; const n = Math.floor(AC.sampleRate * dur); const buf = AC.createBuffer(1, n, AC.sampleRate); const d = buf.getChannelData(0);
@@ -694,7 +694,7 @@ function narrate(text, { rate = 0.82, pitch = 0.55, interrupt = true } = {}) {
   const EN = { '石头碎了……洪水在咆哮。': 'The stone shatters… the flood roars.', '只剩最后一块了。': 'Only one stone left.', '水已经漫过一半山谷。快，时间不多了。': 'The water has swallowed half the valley. Hurry.', '洪水就要吞没一切！': 'The flood is about to swallow everything!', '洪水吞没了山谷。一切，都沉入了黑暗。': 'The flood took the valley. All sank into darkness.' };
   const en = EN[text] || (/^天补上了一角/.test(text) ? `A corner of the sky is mended. ${5 - G.chain.length} to go.` : '');
   const zh = text.replace(/([。！])(?=[^\s])/g, '$1\n');
-  $('sub').innerHTML = ''; $('sub').append(zh); if (en) { const sm = document.createElement('small'); sm.textContent = en; $('sub').append(sm); } $('sub').classList.add('on'); clearTimeout(narrate._t); narrate._t = setTimeout(() => $('sub').classList.remove('on'), 2500 + text.length * 260);
+  $('sub').innerHTML = ''; $('sub').append(zhSpan(zh)); if (en) { const sm = document.createElement('small'); sm.textContent = en; $('sub').append(sm); } $('sub').classList.add('on'); clearTimeout(narrate._t); narrate._t = setTimeout(() => $('sub').classList.remove('on'), 2500 + text.length * 260);
   if (!VOICE) return;
   try { if (interrupt) speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = 'zh-CN'; if (zhVoice) u.voice = zhVoice; u.rate = rate; u.pitch = pitch; u.volume = 1; speechSynthesis.speak(u); } catch (_) {}
 }
@@ -759,7 +759,15 @@ function gong() { if (!AC) return; [1, 2.76, 5.4].forEach((h, i) => pluck(98 * h
 
 // ---------- HUD ----------
 const $ = id => document.getElementById(id);
-function say(text, ms = 3200) { const el = $('msg'); el.textContent = text; el.classList.add('on'); clearTimeout(say._t); say._t = setTimeout(() => el.classList.remove('on'), ms); }
+// language: 'both' | 'zh' | 'en'. Bilingual strings are written '中文 · English'; L() keeps the half the player chose
+let LANG = 'both'; try { LANG = localStorage.getItem('butian-lang') || 'both'; } catch (_) {}
+const CJK = /[\u3400-\u9fff]/;
+function L(t) { if (LANG === 'both' || !t || !t.includes(' · ')) return t; const parts = t.split(' · '); const keep = parts.filter(x => CJK.test(x) === (LANG === 'zh')); return (keep.length ? keep : parts).join(' · '); }
+const zhSpan = t => Object.assign(document.createElement('span'), { className: 'zh-t', textContent: t });
+function setLang(l) { LANG = l; try { localStorage.setItem('butian-lang', l); } catch (_) {} document.body.dataset.lang = l; document.querySelectorAll('.langbtn').forEach(b => b.textContent = { both: '中/EN', zh: '中文', en: 'EN' }[l]); }
+document.querySelectorAll('.langbtn').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); setLang({ both: 'zh', zh: 'en', en: 'both' }[LANG]); try { hudRing(); } catch (_) {} }));
+setLang(LANG);
+function say(text, ms = 3200) { const el = $('msg'); el.textContent = L(text); el.classList.add('on'); clearTimeout(say._t); say._t = setTimeout(() => el.classList.remove('on'), ms); }
 function hudRing() {
   const need = G.chain.length ? NEXT[G.chain[G.chain.length - 1]] : null;
   EL.forEach((e) => {
@@ -767,8 +775,8 @@ function hudRing() {
     n.classList.toggle('done', G.chain.includes(e.key));
     n.classList.toggle('next', need === e.key);
   });
-  $('ring-hint').textContent = G.chain.length === 0 ? '第一块，你来选 · Your first stone is free'
-    : G.chain.length < 5 ? `下一块：${EL.find(e => e.key === need).zh} · Next: ${EL.find(e => e.key === need).en}` : '天已补全 · The sky is whole';
+  $('ring-hint').textContent = L(G.chain.length === 0 ? '第一块，你来选 · Your first stone is free'
+    : G.chain.length < 5 ? `下一块：${EL.find(e => e.key === need).zh} · Next: ${EL.find(e => e.key === need).en}` : '天已补全 · The sky is whole');
 }
 
 // ---------- first-person hand ----------
@@ -870,7 +878,7 @@ function mendArrive(f) {
   f.obj.visible = false; emit(f.seg.center, f.el.color, 260, 9, 0, 2.4); emit(f.seg.center, 0xffffff, 80, 5, 0, 1.6); flash(f.el.color); gong(); sfxMend(f.el.note); shake = 0.35; fovKick = 10;
   banner(`补天 ${['一', '二', '三', '四', '五'][G.chain.length - 1] || ''}`, `${G.chain.length} / 5 mended`, '#' + new THREE.Color(f.el.color).getHexString());
   f.seg.mended = 0.001; G.restoreAnim[EL.indexOf(f.el)] = 0.001;
-  say(`${f.el.name}补上了天。${f.el.zh}气归于大地。`);
+  say(`${f.el.name}补上了天。${f.el.zh}气归于大地。 · The ${f.el.en} stone seals the sky.`);
   if (G.chain.length === 5 && !f.nuwa) setTimeout(win, 1800);
 }
 // Nüwa gathers herself, soars to the crack with the molten stone above her head, seals it, then glides back down
@@ -891,7 +899,7 @@ function nuwaFlight(f, i, dt) {
     avatar.position.lerpVectors(f.to, tmpV.set(A.back.x, ground(), A.back.z), e);
     if (k >= 1) { flights.splice(i, 1); AV.fly = null; G.cut = false; player.pos.copy(A.back); if (G.chain.length === 5) win(); }
   }
-  avatar.rotation.y = AV.face; avatar.rotation.x = A.t > up && A.t < up + rise ? -0.35 : 0;
+  avatar.rotation.y = AV.face; avatar.rotation.x = THREE.MathUtils.lerp(avatar.rotation.x, A.t > up && A.t < up + rise ? -0.35 : 0, Math.min(1, dt * 3)); avatar.rotation.z = Math.sin(A.t * 1.3) * 0.05; // a static model still drifts and banks a little
   // camera: behind and below Nüwa, keeping the crack in frame
   const tgt = tmpA.copy(avatar.position).add(tmpB.set(0, 1.2, 0));
   const want = new THREE.Vector3(tgt.x + Math.sin(A.yaw) * 11, tgt.y - 2.5, tgt.z + Math.cos(A.yaw) * 11);
@@ -934,7 +942,7 @@ function updateAvatar(dt, eye) {
 // the turtle's legs become four pillars, the black dragon is slain, reed ash stills the flood, the world returns, and Nüwa gives herself back to heaven and earth
 function caption(zh, en, ms) {
   const c = $('cine'), line = $('cine-line'); c.hidden = false; c.classList.add('soft'); c.onclick = null; line.classList.remove('on');
-  setTimeout(() => { line.innerHTML = ''; line.append(zh, Object.assign(document.createElement('small'), { textContent: en })); line.classList.add('on'); }, 250);
+  setTimeout(() => { line.innerHTML = ''; line.append(zhSpan(zh), Object.assign(document.createElement('small'), { textContent: en })); line.classList.add('on'); }, 250);
   clearTimeout(caption._t); caption._t = setTimeout(() => line.classList.remove('on'), ms);
 }
 const pillars = [];
@@ -1138,7 +1146,7 @@ function update(dt) {
     else if (G.carrying && nearFurnace()) p = `对准铜炉，点击扔进去 · Click to throw it in`;
     else if (G.carrying) p = `携带：${G.carrying.el.name}（${G.carrying.el.zh}）· 回到炉边`;
     else { const o = nearestOre(); if (o) p = `对准${o.el.name}，点击抓取 · Click to grab`; }
-    $('prompt').textContent = p; $('prompt').classList.toggle('on', !!p);
+    $('prompt').textContent = L(p); $('prompt').classList.toggle('on', !!p);
     // reticle: a dot that blooms into a coloured ring on whatever a click would act on
     let rc = null, rl = '';
     if (!G.forging && !throws.length) {
@@ -1153,7 +1161,7 @@ function update(dt) {
     } else G.hover = null;
     const R = $('reticle'); R.classList.toggle('on', !TP); R.classList.toggle('hot', !!rc);
     if (rc) R.style.setProperty('--rc', '#' + new THREE.Color(rc.el.color).getHexString());
-    R.querySelector('span').textContent = rl;
+    R.querySelector('span').textContent = L(rl);
     if (rc && rc !== G.lastRc) pluck(rc.el.note * 2, 0.4, 0.05, 0.06);
     G.lastRc = rc;
     $('act').hidden = !p || !!G.forging;
@@ -1228,12 +1236,12 @@ function updateGuide() {
   const g = $('guide');
   if (G.phase !== 'play' || G.forging) { g.hidden = true; trail.visible = false; return; }
   let tx, tz, label;
-  if (G.carrying) { tx = FURNACE_POS.x; tz = FURNACE_POS.y; label = '铜炉 Furnace'; }
+  if (G.carrying) { tx = FURNACE_POS.x; tz = FURNACE_POS.y; label = '铜炉 · Furnace'; }
   else {
     const need = G.chain.length ? NEXT[G.chain[G.chain.length - 1]] : null; let bd = 1e9, best = null;
     for (const o of G.ores) { if (o.taken || o.used || (need && o.el.key !== need)) continue; const d = Math.hypot(o.home.x - player.pos.x, o.home.z - player.pos.z); if (d < bd) { bd = d; best = o; } }
     if (!best) { g.hidden = true; trail.visible = false; return; }
-    tx = best.home.x; tz = best.home.z; label = `${best.el.zh}石 ${best.el.en}`;
+    tx = best.home.x; tz = best.home.z; label = `${best.el.zh}石 · ${best.el.en}`;
   }
   const dist = Math.hypot(tx - player.pos.x, tz - player.pos.z);
   gV.set(tx, groundFn(tx, tz) + 2, tz).project(camera);
@@ -1252,7 +1260,7 @@ function updateGuide() {
   trail.instanceMatrix.needsUpdate = true; trail.visible = true;
   g.hidden = false; g.classList.toggle('edge', !on); g.style.transform = `translate(${x}px, ${y}px)`;
   $('guide-arrow').style.transform = `rotate(${ang}deg)`;
-  $('guide-text').textContent = `${label} · ${Math.round(dist)}m`;
+  $('guide-text').textContent = `${L(label)} · ${Math.round(dist)}m`;
 }
 const easeOut = x => 1 - Math.pow(1 - x, 2);
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -1275,7 +1283,7 @@ function win() {
 function lose() {
   G.phase = 'lost'; document.exitPointerLock?.(); stinger(); narrate('洪水吞没了山谷。一切，都沉入了黑暗。', { rate: 0.7, pitch: 0.4 }); thud();
   $('prompt').classList.remove('on'); $('act').hidden = true;
-  $('lose-n').textContent = G.chain.length; $('lose').hidden = false;
+  $('lose-n').textContent = $('lose-n-en').textContent = G.chain.length; $('lose').hidden = false;
 }
 
 function resetGame() {
@@ -1297,7 +1305,7 @@ async function cinematic() {
     : [['往古之时\n四极废　九州裂', 'In ancient times, the four pillars broke and the nine lands split.', 4500], ['天　塌了', 'The sky fell.', 3200], ['洪水从天的裂缝里倾泻而下\n世界失去了颜色', 'A flood poured through the crack, and the world lost its colour.', 5500], ['只有你　女娲\n能把天补上', 'Only you, Nüwa, can mend the sky.', 4200], ['在洪水吞没山谷之前\n找到五行之石', 'Find the five elemental stones before the flood takes the valley.', 4800]];
   let skip = false; c.onclick = () => { skip = true; };
   for (const [t, en, ms] of lines) {
-    if (skip) break; line.classList.remove('on'); await new Promise(r => setTimeout(r, 300)); line.innerHTML = ''; line.append(t, Object.assign(document.createElement('small'), { textContent: en })); line.classList.add('on');
+    if (skip) break; line.classList.remove('on'); await new Promise(r => setTimeout(r, 300)); line.innerHTML = ''; line.append(zhSpan(t), Object.assign(document.createElement('small'), { textContent: en })); line.classList.add('on');
     stinger(); heartbeat(0.5);
     for (let k = 0; k < ms / 100 && !skip; k++) await new Promise(r => setTimeout(r, 100));
   }

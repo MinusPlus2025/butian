@@ -108,11 +108,19 @@ button.ghost { background: transparent; color: var(--paper); border: 1px solid v
 #flash.go { animation: fl 1.2s ease-out; }
 @keyframes fl { 0% { opacity: .75; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { #ring .el.next, #flood.danger { animation: none; } }
+
+/* language switch: body[data-lang] hides one half of every bilingual label */
+body[data-lang="zh"] .en-t, body[data-lang="zh"] #sub small, body[data-lang="zh"] #cine-line small { display: none !important; }
+body[data-lang="en"] .zh-t { display: none !important; }
+body:not([data-lang="en"]) kbd .en-t { display: none; }
+body[data-lang="en"] #sub small, body[data-lang="en"] #cine-line small { font-size: 1.35em; margin-top: 0; }
+.langbtn { font: 600 .8rem var(--latin); letter-spacing: .08em; padding: 6px 12px; border-radius: 4px; border: 1px solid rgba(255,230,180,.6); background: rgba(0,0,0,.45); color: #ffe9b0; cursor: pointer; }
+#langhud { position: absolute; top: calc(92px + env(safe-area-inset-top, 0px)); right: 16px; pointer-events: auto; z-index: 6; }
 </style>
 
 <canvas id="c"></canvas>
 <div id="flash"></div>
-<div id="cine" hidden><div id="cine-line"></div><div class="skip">点击跳过 · click to skip</div></div>
+<div id="cine" hidden><div id="cine-line"></div><div class="skip"><span class="zh-t">点击跳过 · </span><span class="en-t">click to skip</span></div></div>
 <div id="sub"></div>
 <div id="banner"><b></b><i></i></div>
 <div id="guide" hidden><svg id="guide-arrow" style="display:none" viewBox="0 0 48 48" width="44" height="44"><defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6c8"/><stop offset="1" stop-color="#f0a020"/></linearGradient></defs><path d="M24 3 L44 40 L24 31 L4 40 Z" fill="url(#ga)" stroke="#5a2e00" stroke-width="2.5" stroke-linejoin="round"/></svg><div id="guide-text"></div></div>
@@ -125,13 +133,13 @@ button.ghost { background: transparent; color: var(--paper); border: 1px solid v
     <div id="ring-hint"></div>
   </div>
   <div id="flood"><div id="flood-fill"></div></div>
-  <div id="flood-label">水位 · FLOOD</div>
+  <div id="flood-label"><span class="zh-t">水位 · </span><span class="en-t">FLOOD</span></div>
   <div id="timer">0:00</div>
-  <button id="pausebtn">暂停 / 退出 · Esc</button>
+  <button id="pausebtn"><span class="zh-t">暂停 / 退出 · </span>Esc</button><button class="langbtn" id="langhud" title="L">中/EN</button>
   <div id="cross"></div>
   <div id="prompt"></div>
   <div id="reticle"><i></i><span></span></div>
-  <div id="keys"><div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动</div><div><kbd>鼠标</kbd> 转视角（先点一下画面）</div><div><kbd>E</kbd>/<kbd>左键</kbd> 靠近石头拾起 · 炉边投炉</div><div><kbd>Shift</kbd> 冲刺 <kbd>空格</kbd> 跳</div><div><kbd>Esc</kbd> 暂停 / 退出</div><div style="color:#ffd060">● 跟着地上的金色光点走</div></div>
+  <div id="keys"><div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <span class="zh-t">移动</span><span class="en-t">Move</span></div><div><kbd><span class="zh-t">鼠标</span><span class="en-t">Mouse</span></kbd> <span class="zh-t">转视角（先点一下画面）</span><span class="en-t">Look (click the screen first)</span></div><div><kbd>E</kbd>/<kbd><span class="zh-t">左键</span><span class="en-t">Click</span></kbd> <span class="zh-t">靠近石头拾起 · 炉边投炉</span><span class="en-t">Pick up near a stone · throw in at the furnace</span></div><div><kbd>Shift</kbd> <span class="zh-t">冲刺</span><span class="en-t">Sprint</span> <kbd><span class="zh-t">空格</span><span class="en-t">Space</span></kbd> <span class="zh-t">跳</span><span class="en-t">Jump</span></div><div><kbd>Esc</kbd> <span class="zh-t">暂停 / 退出</span><span class="en-t">Pause / quit</span></div><div><kbd>L</kbd> <span class="zh-t">中文 / 英文 / 双语</span><span class="en-t">Language</span></div><div style="color:#ffd060">● <span class="zh-t">跟着地上的金色光点走</span><span class="en-t">Follow the golden dots on the ground</span></div></div>
   <div id="msg"></div>
 </div>
 <button id="act" hidden aria-label="Interact">取</button>
@@ -140,8 +148,9 @@ button.ghost { background: transparent; color: var(--paper); border: 1px solid v
   <div class="card" style="justify-items:center;text-align:center;gap:1.4rem">
     <div class="title" style="justify-content:center"><h1>补天</h1><span class="seal">礼</span></div>
     <span class="en" style="font:italic 1.6rem var(--latin);color:var(--paper-dim);margin-top:-1rem">Mending the Sky</span>
-    <p class="quote">天塌了，洪水不息。你是女娲。</p>
-    <button class="big" id="start" disabled style="justify-self:center">开 始 · Start</button>
+    <p class="quote"><span class="zh-t">天塌了，洪水不息。你是女娲。</span><br><small class="en-t" style="font:italic .8em var(--latin);color:var(--paper-dim)">The sky has fallen and the flood will not stop. You are Nüwa.</small></p>
+    <button class="big" id="start" disabled style="justify-self:center"><span class="zh-t">开 始 · </span>Start</button>
+    <button class="langbtn ghost" id="langintro" style="justify-self:center">中/EN</button>
     <p class="small">World Labs Marble · Tripo · Tripothon S1</p>
   </div>
 </div>
@@ -149,32 +158,32 @@ button.ghost { background: transparent; color: var(--paper); border: 1px solid v
 <div class="overlay" id="end" hidden style="background:linear-gradient(90deg, rgba(10,10,12,.7), rgba(10,10,12,.15) 70%);place-items:center start;padding-left:6vw">
   <div class="card">
     <div class="title"><h1>天成</h1><span class="en">The sky is whole</span></div>
-    <p class="story">洪水退去，颜色回到山河。第一批人走进了山谷。<br>这个世界，是女娲送给他们的礼物。</p>
-    <p class="story-en">The flood recedes and colour returns. The first people walk into the valley. This world is Nüwa's gift to them.</p>
+    <p class="story zh-t">洪水退去，颜色回到山河，百姓重生。<br>女娲耗尽了力量，身归天地。</p>
+    <p class="story-en en-t">The flood recedes, colour returns and the people live again. Her strength spent, Nüwa gives herself back to heaven and earth.</p>
     <div class="end-stats">
-      <div><span>用时 TIME</span><span id="end-time">0:00</span></div>
-      <div><span>碎石 SHATTERED</span><span id="end-miss">0</span></div>
-      <div><span>你的顺序 YOUR CYCLE</span><span id="end-order"></span></div>
+      <div><span><span class="zh-t">用时 </span><span class="en-t">TIME</span></span><span id="end-time">0:00</span></div>
+      <div><span><span class="zh-t">碎石 </span><span class="en-t">SHATTERED</span></span><span id="end-miss">0</span></div>
+      <div><span><span class="zh-t">你的顺序 </span><span class="en-t">YOUR CYCLE</span></span><span id="end-order"></span></div>
     </div>
-    <button class="big" id="again">再 补 一 次</button>
+    <button class="big" id="again"><span class="zh-t">再 补 一 次 · </span><span class="en-t">Play again</span></button>
   </div>
 </div>
 
 <div class="overlay" id="lose" hidden>
   <div class="card">
     <div class="title"><h1>水没</h1><span class="en">The flood took the valley</span></div>
-    <p class="story">你补上了 <b id="lose-n">0</b> 块。洪水先到了。想想从哪一块开始，路会更短。</p>
-    <p class="story-en">Think about which stone to start with. The low ground floods first.</p>
-    <button class="big" id="retry">再 试</button>
+    <p class="story zh-t">你补上了 <b id="lose-n">0</b> 块。洪水先到了。想想从哪一块开始，路会更短。</p>
+    <p class="story-en en-t">You sealed <b id="lose-n-en">0</b>. The flood came first. Think about which stone to start with. The low ground floods first.</p>
+    <button class="big" id="retry"><span class="zh-t">再 试 · </span><span class="en-t">Try again</span></button>
   </div>
 </div>
 <div class="overlay" id="pause" hidden>
   <div class="card">
     <div class="title"><h1 style="font-size:4rem">暂停</h1><span class="en">Paused</span></div>
-    <p class="small">洪水停住了。WASD 移动 · 鼠标看 · Shift 跑 · E 拾取/炼石 · Esc 暂停</p>
-    <div class="btns"><button class="big" id="resume">继 续</button><button class="big ghost" id="restart">重新开始</button><button class="big ghost" id="quit">退出到标题</button></div>
+    <p class="small"><span class="zh-t">洪水停住了。WASD 移动 · 鼠标看 · Shift 跑 · E 拾取/炼石 · Esc 暂停<br></span><span class="en-t">The flood is held. WASD move · Mouse look · Shift run · E pick up / forge · Esc pause</span></p>
+    <div class="btns"><button class="big" id="resume"><span class="zh-t">继 续 · </span><span class="en-t">Resume</span></button><button class="big ghost" id="restart"><span class="zh-t">重新开始 · </span><span class="en-t">Restart</span></button><button class="big ghost" id="quit"><span class="zh-t">退出到标题 · </span><span class="en-t">Quit</span></button></div>
   </div>
 </div>
-<div id="loading">载入世界…… Loading the world</div>
+<div id="loading"><span class="zh-t">载入世界…… </span><span class="en-t">Loading the world</span></div>
 <!--CONFIG-->
 <!--SCRIPT-->
