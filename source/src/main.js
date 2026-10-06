@@ -773,7 +773,7 @@ function update(dt) {
 
   updateAmbience(dt); updateParticles(dt); if (G.phase === 'play') musicTick(dt, fl);
   // hand: idle sway, walk bob, reach on click, hidden outside play
-  hand.visible = false; handL.visible = false;
+  hand.visible = G.phase === 'play'; handL.visible = hand.visible && !!G.realHands;
   reachT = Math.max(0, reachT - dt);
   const rk = Math.sin(Math.min(1, (0.35 - reachT) / 0.35) * Math.PI) * (reachT > 0 ? 1 : 0);
   hand.position.set(HAND_REST.x - rk * 0.12 + Math.sin(G.t * 1.3) * 0.006, HAND_REST.y + rk * 0.12 + Math.abs(Math.sin(G.walkT || 0)) * -0.025 + (G.carrying ? 0.05 : 0), HAND_REST.z - rk * 0.35);
