@@ -278,7 +278,7 @@ async function buildSplatWorld(W) {
     uResD.value.set(r[0], r[1], r[2], r[3]); uRes5.value.set(r[4], U.uAll.value, cm[4], 0); uMend.value.set(cm[0], cm[1], cm[2], cm[3]);
     splatMesh.updateVersion();
   };
-  await splatMesh.initialized;
+  await splatMesh.initialized; loadWorldB();
   if (W.collider) {
     const g = await loadGLB(W.collider);
     if (g) {
@@ -363,6 +363,58 @@ const G = {
 };
 const player = { pos: new THREE.Vector3(START_POS.x, 0, START_POS.y), yaw: 0, pitch: 0.05, vy: 0 };
 
+// ---------- Nüwa, played in third person ----------
+const TP = CFG.world?.view !== 'first';
+// gameplay is seen through Nüwa's eyes; her full body appears only when the camera leaves her: the mend flights and the ending
+const FPV = TP && CFG.world?.view !== 'third';
+const NUWA_H = CFG.world?.nuwaHeight ?? 2.3;
+const avatar = new THREE.Group(); avatar.visible = false; scene.add(avatar);
+const AV = { face: 0, speed: 0, fly: null, reach: 0, lx: 0, lz: 0, camPos: new THREE.Vector3(), camInit: false };
+let nuwaBody = makeNuwaPlaceholder(), nuwaMixer = null; const nuwaActs = {}; avatar.add(nuwaBody);
+{ const l = new THREE.PointLight(0xffe6c0, 6, 6); l.position.set(0, 2.2, 1); avatar.add(l); }
+function makeNuwaPlaceholder() {
+  // a robed goddess built from primitives, used until the Tripo model is supplied
+  const g = new THREE.Group(), M = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, ...o });
+  const red = M(0xa61e1a), white = M(0xf1e8d6), gold = M(0xd8b04a, { metalness: 0.7, roughness: 0.35 }), skin = M(0xeac7a6), hair = M(0x15110f, { roughness: 0.45 });
+  const prof = [[0.02, 0], [0.7, 0.02], [0.62, 0.35], [0.46, 0.85], [0.33, 1.25], [0.26, 1.5], [0.2, 1.62]].map(([r, y]) => new THREE.Vector2(r, y));
+  g.add(new THREE.Mesh(new THREE.LatheGeometry(prof, 28), red));
+  const inner = new THREE.Mesh(new THREE.LatheGeometry(prof.map(v => new THREE.Vector2(v.x * 0.86, v.y * 0.98)), 28, -0.6, 1.2), white); inner.position.z = -0.03; inner.rotation.y = Math.PI; g.add(inner);
+  const sash = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.05, 8, 24), gold); sash.rotation.x = Math.PI / 2; sash.position.y = 1.18; g.add(sash);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.14, 10), skin); neck.position.y = 1.68; g.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 16), skin); head.scale.set(0.92, 1.08, 0.96); head.position.y = 1.86; g.add(head);
+  const hairCap = new THREE.Mesh(new THREE.SphereGeometry(0.168, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.62), hair); hairCap.position.y = 1.88; hairCap.rotation.x = 0.35; g.add(hairCap);
+  const bun = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), hair); bun.position.set(0, 2.08, 0.06); g.add(bun);
+  for (const s of [-1, 1]) { const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.3, 6), gold); pin.position.set(s * 0.06, 2.1, 0.06); pin.rotation.z = s * 1.1; g.add(pin); }
+  for (const s of [-1, 1]) {
+    const arm = new THREE.Group(); arm.position.set(s * 0.28, 1.55, 0);
+    const sleeve = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.75, 12, 1, true), red); sleeve.material = red; sleeve.rotation.x = Math.PI / 2 + 0.5; sleeve.position.set(0, -0.2, -0.28); arm.add(sleeve);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), skin); hand.position.set(-s * 0.06, -0.38, -0.62); arm.add(hand);
+    g.add(arm); g.userData['arm' + (s > 0 ? 'R' : 'L')] = arm;
+  }
+  // a silk ribbon (披帛) arching behind the shoulders
+  const rc = new THREE.CatmullRomCurve3([new THREE.Vector3(-0.75, 0.7, -0.1), new THREE.Vector3(-0.45, 1.45, 0.2), new THREE.Vector3(0, 1.65, 0.28), new THREE.Vector3(0.45, 1.45, 0.2), new THREE.Vector3(0.8, 0.6, -0.05)]);
+  const rib = new THREE.Mesh(new THREE.TubeGeometry(rc, 40, 0.03, 6), M(0xf4d58a, { emissive: 0x3a2400 })); g.add(rib); g.userData.ribbon = rib;
+  return g;
+}
+async function setupNuwa() {
+  if (!CFG.assets?.nuwa) return;
+  try {
+    const bytes = await loadBin(CFG.assets.nuwa);
+    const gl = await new Promise((res, rej) => gltf.parse(bytes.buffer, '', res, rej)); const m = gl.scene;
+    const b = new THREE.Box3().setFromObject(m), sz = b.getSize(new THREE.Vector3()); m.scale.multiplyScalar(NUWA_H / sz.y);
+    const b2 = new THREE.Box3().setFromObject(m), c = b2.getCenter(new THREE.Vector3()); m.position.sub(new THREE.Vector3(c.x, b2.min.y, c.z));
+    const wrap = new THREE.Group(); wrap.add(m); wrap.rotation.y = CFG.world?.nuwaRot ?? Math.PI;
+    avatar.remove(nuwaBody); nuwaBody = wrap; avatar.add(wrap);
+    if (gl.animations?.length) {
+      nuwaMixer = new THREE.AnimationMixer(m);
+      for (const a of gl.animations) { const n = a.name.toLowerCase(); nuwaActs[/walk|run|move|locomot/.test(n) ? 'walk' : /idle|stand|breath/.test(n) ? 'idle' : n] = nuwaMixer.clipAction(a); }
+      Object.values(nuwaActs).forEach(a => { a.play(); a.setEffectiveWeight(0); }); (nuwaActs.idle || Object.values(nuwaActs)[0]).setEffectiveWeight(1);
+    }
+  } catch (e) { console.warn('nuwa load failed', e); }
+}
+function nearestOreTP() { let best = null, bd = CFG.world?.pickRange ?? 4.5; for (const o of G.ores) { if (o.taken || o.used) continue; const d = Math.hypot(o.home.x - player.pos.x, o.home.z - player.pos.z); if (d < bd) { bd = d; best = o; } } return best; }
+function furnaceDist() { return Math.hypot(FURNACE_POS.x - player.pos.x, FURNACE_POS.y - player.pos.z); }
+
 const handL = new THREE.Group(); camera.add(handL); handL.visible = false;
 async function setupHands() {
   if (!CFG.assets?.hand) return;
@@ -380,7 +432,7 @@ async function setupHands() {
 }
 // a torn, glowing crack across the sky: jagged ribbons (white-hot core + red glow) that can tear open and heal
 const ribTex = (() => { const c = document.createElement('canvas'); c.width = 4; c.height = 64; const g = c.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, 64); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 4, 64); return new THREE.CanvasTexture(c); })();
-function ribbon(pts, w, color, opacity) {
+function ribbon(pts, w, color, opacity, blending = THREE.AdditiveBlending, order = 999) {
   const pos = [], uv = [], idx = [];
   pts.forEach((p, i) => {
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)]; const tx = b.x - a.x, ty = b.y - a.y, l = Math.hypot(tx, ty) || 1;
@@ -390,24 +442,44 @@ function ribbon(pts, w, color, opacity) {
     if (i) { const k = (i - 1) * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
   });
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
-  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, map: ribTex, transparent: true, opacity, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
-  m.renderOrder = 999; m.frustumCulled = false; return m;
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, map: ribTex, transparent: true, opacity, depthWrite: false, depthTest: false, blending, side: THREE.DoubleSide, fog: false, toneMapped: false }));
+  m.renderOrder = order; m.frustumCulled = false; return m;
 }
 function jag(a, b, n, amp) { const out = []; for (let i = 0; i <= n; i++) { const t = i / n, e = Math.sin(t * Math.PI); out.push(new THREE.Vector3(a.x + (b.x - a.x) * t + (Math.random() - 0.5) * 0.6, a.y + (b.y - a.y) * t + (Math.random() < 0.5 ? 1 : -1) * amp * Math.pow(Math.random(), 1.5) * (i && i < n ? 1 : 0.3), a.z + (b.z - a.z) * t + (Math.random() - 0.5) * 1.5 * e)); } return out; }
+const bolts = [];
+function spawnBolt() {
+  const c = crackSegs[Math.floor(Math.random() * crackSegs.length)]; if (!c || !c.rib) return;
+  const S = crackSegs[1].center.distanceTo(crackSegs[0].center) / 13;
+  const start = c.center.clone().add(new THREE.Vector3((Math.random() - 0.5) * 8 * S, 0, 0));
+  const end = new THREE.Vector3(start.x + (Math.random() - 0.5) * 30 * S, 4, start.z + 10 + Math.random() * 20);
+  const path = (a, b, n, amp) => { const out = []; for (let i = 0; i <= n; i++) { const t = i / n; out.push(new THREE.Vector3(a.x + (b.x - a.x) * t + (i && i < n ? (Math.random() - 0.5) * amp : 0), a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t)); } return out; };
+  const main = path(start, end, 18, 4 * S), grp = new THREE.Group(), mats = [];
+  const add = (pts, w) => { const glow = ribbon(pts, w * 7, 0x9fb8ff, 0.7, THREE.AdditiveBlending, 1000), core = ribbon(pts, w, 0xffffff, 1, THREE.NormalBlending, 1001); grp.add(glow, core); mats.push(glow, core); };
+  add(main, 0.5 * S);
+  for (let k = 0; k < 3; k++) { const i = 3 + Math.floor(Math.random() * 10), from = main[i]; const to = from.clone().add(new THREE.Vector3((Math.random() - 0.5) * 14 * S, -(4 + Math.random() * 10) * S, (Math.random() - 0.5) * 4)); add(path(from, to, 7, 2 * S), 0.22 * S); }
+  scene.add(grp); bolts.push({ grp, mats, t: 0 });
+}
+function updateBolts(dt) {
+  for (let i = bolts.length - 1; i >= 0; i--) {
+    const b = bolts[i]; b.t += dt; const on = b.t < 0.07 || (b.t > 0.12 && b.t < 0.2) || (b.t > 0.26 && b.t < 0.3);
+    b.mats.forEach((m, j) => { m.material.opacity = on ? (j % 2 ? 1 : 0.7) : (j % 2 ? 0.15 : 0.05); });
+    if (b.t > 0.45) { scene.remove(b.grp); b.mats.forEach(m => { m.geometry.dispose(); m.material.dispose(); }); bolts.splice(i, 1); }
+  }
+}
 function buildSkyCrack() {
   const C = crackSegs.map(c => c.center);
   crackSegs.forEach((s, i) => {
     const a = i ? C[i - 1].clone().lerp(C[i], 0.5) : C[i].clone().add(new THREE.Vector3(-(C[1].x - C[0].x) * 0.6, -2, 2));
     const b = i < C.length - 1 ? C[i].clone().lerp(C[i + 1], 0.5) : C[i].clone().add(new THREE.Vector3((C[i].x - C[i - 1].x) * 0.6, -2, 2));
     const S = C[1].distanceTo(C[0]) / 13, main = jag(a, b, 12, 1.4 * S), grp = new THREE.Group(), parts = [];
-    const add = (pts, wc, wg) => { const glow = ribbon(pts, wg, 0xff4a20, 0.55), core = ribbon(pts, wc, 0xfff2dc, 0.95); grp.add(glow, core); parts.push({ glow, core }); };
+    const add = (pts, wc, wg) => { const dark = ribbon(pts, wc * 3.2, 0x1a0603, 0.85, THREE.NormalBlending, 997), glow = ribbon(pts, wg, 0xff4a20, 0.55, THREE.AdditiveBlending, 998), core = ribbon(pts, wc, 0xffe2b0, 0.95, THREE.NormalBlending, 999); grp.add(dark, glow, core); parts.push({ dark, glow, core }); };
     add(main, 0.7 * S, 6 * S);
     for (let k = 0; k < 3; k++) { const from = main[2 + Math.floor(Math.random() * (main.length - 4))]; const dir = new THREE.Vector3((Math.random() - 0.5) * 6 * S, (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 4) * S, 0); add(jag(from, from.clone().add(dir), 5, 0.6 * S), 0.3 * S, 2.2 * S); }
     scene.add(grp); s.rib = { grp, parts }; s.open = 0; s.delay = i * 0.9;
   });
 }
 async function setupProps() {
-  setupHands();
+  setupHands(); setupNuwa();
   const W = CFG.world;
   if (W) {
     if (W.regions) W.regions.forEach((p, i) => { EL[i].pos = p; U.uReg.value[i].set(p[0], 0, p[1], W.regionR || REGION_R); });
@@ -427,9 +499,17 @@ async function setupProps() {
     const stone = await makeStone(el);
     const [x, z] = el.pos; const y = groundFn(x, z);
     stone.position.set(x, y, z); scene.add(stone);
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.9, 140, 8, 1, true),
-      new THREE.MeshBasicMaterial({ color: el.color, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, fog: false }));
-    beam.position.set(x, y + 70, z); scene.add(beam);
+    const bm = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, uniforms: { uCol: { value: new THREE.Color(el.color) }, uT: { value: 0 }, uOp: { value: 0.22 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform vec3 uCol; uniform float uT, uOp; varying vec2 vUv;
+        void main(){ float x = (vUv.x - 0.5) * 2.0, h = vUv.y;
+          float core = exp(-x * x * 22.0), halo = exp(-x * x * 3.5) * 0.4;
+          float vf = pow(1.0 - h, 1.8) * smoothstep(0.0, 0.02, h);
+          float n = 0.7 + 0.3 * sin(h * 46.0 - uT * 3.2 + sin(h * 11.0 + uT * 0.7 + x * 3.0) * 2.0);
+          float a = (core + halo) * vf * n * uOp * 2.8;
+          gl_FragColor = vec4(mix(uCol * 1.3, vec3(1.0), core * 0.55), clamp(a, 0.0, 0.95)); }` });
+    const beam = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 60), bm);
+    beam.position.set(x, y + 30, z); beam.onBeforeRender = (r, sc, cam) => { bm.uniforms.uOp.value = bm.opacity; bm.uniforms.uT.value = G.t; beam.rotation.y = Math.atan2(cam.position.x - beam.position.x, cam.position.z - beam.position.z); }; scene.add(beam);
     const light = new THREE.PointLight(el.color, 30, 18); light.position.set(x, y + 2, z); scene.add(light);
     G.ores.push({ el, stone, beam, light, home: new THREE.Vector3(x, y, z), taken: false, used: false });
   }
@@ -451,7 +531,7 @@ async function setupProps() {
 
 // ---------- input ----------
 const keys = {};
-addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'KeyE' && !G.paused) handAction(); if (e.code === 'Space' && G.phase === 'play' && !G.paused && !(player.jy > 0.01)) { player.jv = 7.5; noiseBurst(0.12, 500, 250, 0.08, 'lowpass'); e.preventDefault(); } if ((e.code === 'Escape' || e.code === 'KeyP') && G.phase === 'play' && !locked) setPause(!G.paused); });
+addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'KeyE' && !G.paused) handAction(); if (e.code === 'Space' && G.phase === 'play' && !G.paused && !G.cut && !(player.jy > 0.01)) { player.jv = 7.5; noiseBurst(0.12, 500, 250, 0.08, 'lowpass'); e.preventDefault(); } if ((e.code === 'Escape' || e.code === 'KeyP') && G.phase === 'play' && !locked) setPause(!G.paused); });
 addEventListener('keyup', e => { keys[e.code] = false; });
 let locked = false, dragging = false, lastX = 0, lastY = 0;
 document.addEventListener('pointerlockchange', () => { const was = locked; locked = document.pointerLockElement === canvas; if (was && !locked && G.phase === 'play' && matchMedia('(pointer: fine)').matches) setPause(true); });
@@ -716,17 +796,26 @@ function aimAt(target, maxD, loose = 1) {
 const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
 const throws = [];
 function handAction() {
-  if (G.phase !== 'play' || G.paused || G.forging || throws.length) return;
+  if (G.phase !== 'play' || G.paused || G.forging || throws.length || G.cut) return;
+  if (TP) {
+    AV.reach = 0.45;
+    if (!G.carrying) { const o = nearestOreTP(); if (o) { G.grabFrom = o.stone.position.clone(); G.grabT = 0; return interact(o); } say('走到发光的五行石旁边，再按 E 或左键 · Walk up to a glowing stone, then press E or click', 2400); }
+    else if (furnaceDist() < (CFG.world?.throwRange ?? 7)) {
+      const o = G.carrying; G.carrying = null; const fpos = new THREE.Vector3(FURNACE_POS.x, G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.8, FURNACE_POS.y);
+      throws.push({ o, from: o.stone.position.clone(), to: fpos, t: 0 }); noiseBurst(0.35, 300, 900, 0.12, 'lowpass');
+    } else say('带着石头走到铜炉旁边 · Carry it to the bronze furnace', 2000);
+    return;
+  }
   reachT = 0.35;
   if (!G.carrying) {
     let best = null, bd = 1e9;
-    for (const o of G.ores) { if (o.taken || o.used) continue; const dd = o.stone.position.distanceTo(camera.position); if (dd < bd && (o === G.hover || aimAt(o.stone.position, 14))) { bd = dd; best = o; } }
+    for (const o of G.ores) { if (o.taken || o.used) continue; const dd = o.stone.position.distanceTo(camera.position); if (dd < bd && (o === G.hover || aimAt(o.stone.position, 30))) { bd = dd; best = o; } }
     if (!best) { let bd2 = 7; for (const o of G.ores) { if (o.taken || o.used) continue; const d2 = Math.hypot(o.home.x - player.pos.x, o.home.z - player.pos.z); if (d2 < bd2) { bd2 = d2; best = o; } } }
     if (best) { G.grabFrom = best.stone.position.clone(); G.grabT = 0; return interact(best); }
     say('对准发光的原石，再点击抓取 · Aim at an ore and click', 1800);
   } else {
     const fpos = new THREE.Vector3(FURNACE_POS.x, G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.8, FURNACE_POS.y);
-    if (aimAt(fpos, 18) || Math.hypot(FURNACE_POS.x - player.pos.x, FURNACE_POS.y - player.pos.z) < 10) {
+    if (aimAt(fpos, 35) || Math.hypot(FURNACE_POS.x - player.pos.x, FURNACE_POS.y - player.pos.z) < 10) {
       const o = G.carrying; G.carrying = null; o.stone.scale.setScalar(1);
       throws.push({ o, from: o.stone.position.clone(), to: fpos, t: 0 }); noiseBurst(0.35, 300, 900, 0.12, 'lowpass');
     } else say('对准铜炉，再点击把石头扔进去 · Aim at the furnace and click', 1800);
@@ -765,6 +854,7 @@ function forgeDone(o) {
   const seg = crackSegs[G.chain.length - 1]; seg.el = o.el;
   whoosh(); emit(new THREE.Vector3(FURNACE_POS.x, G.furnace.y + 3, FURNACE_POS.y), o.el.color, 120, 5, 3, 1.6);
   o.stone.visible = true; o.stone.scale.setScalar(1); flights.push({ obj: o.stone, from: new THREE.Vector3(FURNACE_POS.x, G.furnace.y + 3, FURNACE_POS.y), to: seg.center.clone(), t: 0, seg, el: o.el });
+  if (TP) { const f = flights[flights.length - 1]; f.nuwa = true; f.from = avatar.position.clone(); f.to = seg.center.clone().add(new THREE.Vector3(0, -NUWA_H - 1, 6)); AV.fly = { t: 0, back: player.pos.clone(), yaw: Math.atan2(player.pos.x - seg.center.x, player.pos.z - seg.center.z) }; G.cut = true; say(`女娲托起${o.el.zh}石，飞向天裂 · Nüwa rises with the ${o.el.en} stone`, 4000); }
   pluck(o.el.note, 3.2, 0.25);
   G.water = Math.max(CFG.world?.water?.water ?? -2.6, G.water - (CFG.world?.water?.drop ?? 2.0)); G.rate *= 0.84;
   hudRing();
@@ -774,14 +864,112 @@ function forgeDone(o) {
 const flights = [];
 let shake = 0;
 
+
+// a stone reaches the crack: seal that stretch of sky
+function mendArrive(f) {
+  f.obj.visible = false; emit(f.seg.center, f.el.color, 260, 9, 0, 2.4); emit(f.seg.center, 0xffffff, 80, 5, 0, 1.6); flash(f.el.color); gong(); sfxMend(f.el.note); shake = 0.35; fovKick = 10;
+  banner(`补天 ${['一', '二', '三', '四', '五'][G.chain.length - 1] || ''}`, `${G.chain.length} / 5 mended`, '#' + new THREE.Color(f.el.color).getHexString());
+  f.seg.mended = 0.001; G.restoreAnim[EL.indexOf(f.el)] = 0.001;
+  say(`${f.el.name}补上了天。${f.el.zh}气归于大地。`);
+  if (G.chain.length === 5 && !f.nuwa) setTimeout(win, 1800);
+}
+// Nüwa gathers herself, soars to the crack with the molten stone above her head, seals it, then glides back down
+function nuwaFlight(f, i, dt) {
+  const A = AV.fly; A.t += dt; const up = 0.9, rise = 3.6, hold = 1.6, down = 2.6;
+  const ground = () => Math.max(groundFn(A.back.x, A.back.z), G.water) + 0.35;
+  if (A.t < up) { avatar.position.y += dt * 0.4; if (Math.random() < 0.6) emit(avatar.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.5, Math.random() * 2, (Math.random() - 0.5) * 1.5)), f.el.color, 2, 1.2, 2, 1); f.obj.position.copy(avatar.position).add(tmpV.set(0, NUWA_H + 0.5, 0)); f.obj.scale.setScalar(0.5); if (!A.whoosh) { A.whoosh = 1; whoosh(); } }
+  else if (A.t < up + rise) {
+    const k = (A.t - up) / rise, e = k * k * (3 - 2 * k);
+    avatar.position.lerpVectors(f.from, f.to, e); avatar.position.y = THREE.MathUtils.lerp(f.from.y, f.to.y, Math.sin(e * Math.PI / 2));
+    f.obj.position.copy(avatar.position).add(tmpV.set(0, NUWA_H + 0.5, 0)); f.obj.scale.setScalar(0.5 + e * 1.2); f.obj.rotation.y += dt * 4;
+    emit(avatar.position.clone().add(tmpV.set(0, 1, 0)), f.el.color, 4, 0.6, -1, 1.4); emit(f.obj.position, 0xfff0c0, 2, 0.4, 0, 0.8);
+    AV.face = THREE.MathUtils.lerp(AV.face, Math.atan2(-(f.to.x - f.from.x), -(f.to.z - f.from.z)), dt * 4);
+  } else if (!f.done) { f.done = true; f.obj.position.copy(f.seg.center); mendArrive(f); }
+  else if (A.t < up + rise + hold) { avatar.position.y = f.to.y + Math.sin(A.t * 2) * 0.2; }
+  else {
+    const k = Math.min(1, (A.t - up - rise - hold) / down), e = k * k * (3 - 2 * k);
+    avatar.position.lerpVectors(f.to, tmpV.set(A.back.x, ground(), A.back.z), e);
+    if (k >= 1) { flights.splice(i, 1); AV.fly = null; G.cut = false; player.pos.copy(A.back); if (G.chain.length === 5) win(); }
+  }
+  avatar.rotation.y = AV.face; avatar.rotation.x = A.t > up && A.t < up + rise ? -0.35 : 0;
+  // camera: behind and below Nüwa, keeping the crack in frame
+  const tgt = tmpA.copy(avatar.position).add(tmpB.set(0, 1.2, 0));
+  const want = new THREE.Vector3(tgt.x + Math.sin(A.yaw) * 11, tgt.y - 2.5, tgt.z + Math.cos(A.yaw) * 11);
+  want.y = Math.max(want.y, groundFn(want.x, want.z) + 1, G.water + 1);
+  AV.camPos.lerp(want, Math.min(1, dt * 3)); camera.position.copy(AV.camPos); camera.lookAt(tgt.lerp(f.seg.center, 0.25));
+}
+// third-person: Nüwa hovers where the player is, faces where she moves; the camera trails behind her shoulder
+function updateAvatar(dt, eye) {
+  avatar.visible = true;
+  const dx = player.pos.x - AV.lx, dz = player.pos.z - AV.lz; AV.lx = player.pos.x; AV.lz = player.pos.z;
+  const sp = dt > 0 ? Math.hypot(dx, dz) / dt : 0; AV.speed = THREE.MathUtils.lerp(AV.speed, Math.min(sp, 15), Math.min(1, dt * 8));
+  if (!AV.fly) {
+    if (sp > 0.3) { let want = Math.atan2(-dx, -dz), d = want - AV.face; d = Math.atan2(Math.sin(d), Math.cos(d)); AV.face += d * Math.min(1, dt * 10); }
+    const base = Math.max(player.pos.y, G.water) + 0.3 + (player.jy || 0) * 1.6;
+    avatar.position.set(player.pos.x, base + Math.sin(G.t * 1.7) * 0.07, player.pos.z);
+    avatar.rotation.set(-Math.min(0.25, AV.speed * 0.02), AV.face, 0);
+  }
+  // robe sway, arms reach for a pickup, ribbon flutter
+  AV.reach = Math.max(0, AV.reach - dt);
+  const ud = nuwaBody.userData, rk = Math.sin(Math.min(1, (0.45 - AV.reach) / 0.45) * Math.PI) * (AV.reach > 0 ? 1 : 0);
+  if (ud.armL) { const lift = G.carrying ? 0.7 : 0.15 + rk * 0.9; ud.armL.rotation.x = lift + Math.sin(G.t * 1.3) * 0.05; ud.armR.rotation.x = lift + Math.sin(G.t * 1.3 + 1) * 0.05; }
+  if (ud.ribbon) { ud.ribbon.rotation.x = 0.15 + Math.sin(G.t * 2.1) * 0.08 + AV.speed * 0.03; ud.ribbon.rotation.z = Math.sin(G.t * 1.4) * 0.06; }
+  if (nuwaMixer) { nuwaMixer.update(dt); const w = Math.min(1, AV.speed / 5); nuwaActs.walk?.setEffectiveWeight(w); nuwaActs.idle?.setEffectiveWeight(1 - w); }
+  if (AV.fly) { nuwaBody.visible = true; return; } // the flight drives the camera
+  if (FPV) {
+    nuwaBody.visible = false; AV.face = player.yaw;
+    camera.position.set(player.pos.x, eye + Math.abs(Math.sin(G.walkT || 0)) * 0.06, player.pos.z);
+    camera.rotation.order = 'YXZ'; camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
+    AV.camPos.copy(camera.position); AV.camInit = true; return;
+  }
+  const phi = THREE.MathUtils.clamp(0.28 - player.pitch * 0.8, -0.15, 1.1), dist = CFG.world?.camDist ?? 6;
+  const tgt = tmpA.set(avatar.position.x, avatar.position.y + NUWA_H * 0.78, avatar.position.z);
+  const rx = Math.cos(player.yaw) * 0.7, rz = -Math.sin(player.yaw) * 0.7;
+  const want = tmpB.set(tgt.x + Math.sin(player.yaw) * Math.cos(phi) * dist + rx, tgt.y + Math.sin(phi) * dist, tgt.z + Math.cos(player.yaw) * Math.cos(phi) * dist + rz);
+  want.y = Math.max(want.y, groundFn(want.x, want.z) + 0.6, G.water + 0.5);
+  if (!AV.camInit) { AV.camPos.copy(want); AV.camInit = true; } else AV.camPos.lerp(want, Math.min(1, dt * 12));
+  camera.position.copy(AV.camPos); camera.lookAt(tgt.x + rx, tgt.y, tgt.z + rz);
+}
+// the ending, after the fifth stone, told after 《淮南子·览冥训》:
+// the turtle's legs become four pillars, the black dragon is slain, reed ash stills the flood, the world returns, and Nüwa gives herself back to heaven and earth
+function caption(zh, en, ms) {
+  const c = $('cine'), line = $('cine-line'); c.hidden = false; c.classList.add('soft'); c.onclick = null; line.classList.remove('on');
+  setTimeout(() => { line.innerHTML = ''; line.append(zh, Object.assign(document.createElement('small'), { textContent: en })); line.classList.add('on'); }, 250);
+  clearTimeout(caption._t); caption._t = setTimeout(() => line.classList.remove('on'), ms);
+}
+const pillars = [];
+function finaleTick(dt) {
+  const t = G.endT, once = (k, at, fn) => { if (t > at && !G['fin' + k]) { G['fin' + k] = 1; fn(); } };
+  once(1, 2.5, () => {
+    caption('天补好了　却没有支柱\n女娲斩巨鳌　以四足立四极', 'The sky was whole but unpropped; Nüwa took the great turtle\'s four legs as pillars for the four corners.', 5600);
+    const B = CFG.world?.bounds || [-40, 40, -40, 40], pts = [[B[0] + 4, B[2] + 4], [B[1] - 4, B[2] + 4], [B[0] + 4, B[3] - 4], [B[1] - 4, B[3] - 4]];
+    pts.forEach(([x, z], i) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.5, 1, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false })); m.position.set(x, groundFn(x, z), z); m.scale.y = 0.01; scene.add(m); pillars.push({ m, d: i * 0.5 }); drum(0.5, i * 0.5); });
+  });
+  pillars.forEach(p => { const k = THREE.MathUtils.clamp((t - 2.8 - p.d) / 2.2, 0, 1); const h = 140 * (1 - Math.pow(1 - k, 3)); p.m.scale.y = Math.max(0.01, h); p.m.position.y = groundFn(p.m.position.x, p.m.position.z) + h / 2; if (k > 0 && k < 1) emit(new THREE.Vector3(p.m.position.x, groundFn(p.m.position.x, p.m.position.z) + 0.5, p.m.position.z), 0xffd27a, 3, 3, 2, 1.2); });
+  once(2, 8.5, () => { caption('黑龙兴风作浪\n女娲斩黑龙　风浪平息', 'The black dragon churned the flood; Nüwa slew it, and the waves fell still.', 5000); stinger(); setTimeout(() => { flash(0xffffff); thunderSfx(1); gong(); shake = 1.2; emit(new THREE.Vector3(player.pos.x, G.water + 1, player.pos.z - 25), 0x111111, 300, 14, 4, 2.5); emit(new THREE.Vector3(player.pos.x, G.water + 1, player.pos.z - 25), 0xffe8b0, 120, 10, 6, 1.6); }, 1600); });
+  once(3, 14, () => { caption('积芦灰以止淫水', 'She burned the reeds and piled their ash to stop the flood.', 5600); });
+  if (t > 14 && t < 21) for (let k = 0; k < 5; k++) emit(new THREE.Vector3(player.pos.x + (Math.random() - 0.5) * 70, 16 + Math.random() * 12, player.pos.z - 15 + (Math.random() - 0.5) * 70), Math.random() < 0.6 ? 0xb0a080 : 0xffc870, 1, 0.4, -1.6, 5);
+  G.water = THREE.MathUtils.lerp(G.water, t > 14 ? (CFG.world?.water?.water ?? -2.6) - 4 : G.water, dt * 0.35);
+  once(4, 20.5, () => { flash(0xffffff); if (worldB) { worldB.visible = true; if (splatMesh) splatMesh.visible = false; if (G.furnace) G.furnace.obj.visible = false; G.villagers.forEach(v => v.visible = false); } EL.forEach((e, i) => pluck(e.note, 5, 0.16, i * 0.3)); });
+  once(5, 22, () => caption('苍天补　四极正\n淫水涸　冀州平', 'The sky was mended and the four corners stood; the flood dried and the land was at peace.', 6500));
+  once(6, 29.5, () => caption('天地复原　百姓重生\n女娲耗尽了力量　身归天地', 'Heaven and earth were restored and the people lived on. Spent, Nüwa gave herself back to the world.', 7000));
+  if (t > 31 && t < 37) { const k = (t - 31) / 6; nuwaBody.scale.setScalar(Math.max(0.001, 1 - k)); if (Math.random() < 0.8) emit(avatar.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.2, Math.random() * NUWA_H, (Math.random() - 0.5) * 1.2)), Math.random() < 0.5 ? 0xffe0a0 : EL[Math.floor(Math.random() * 5)].color, 3, 1.2, 3, 2.5); }
+}
+let worldB = null;
+async function loadWorldB() {
+  const W = CFG.world; if (!W?.spzB) return;
+  try { worldB = new SplatMesh({ fileBytes: await loadBin(W.spzB), fileType: 'spz' }); const t = W.transformB || W.transform || {}; if (t.position) worldB.position.fromArray(t.position); worldB.quaternion.fromArray(t.quaternion || [1, 0, 0, 0]); if (t.scale) worldB.scale.setScalar(t.scale); worldB.visible = false; scene.add(worldB); }
+  catch (e) { console.warn('world B failed', e); worldB = null; }
+}
 // ---------- loop ----------
 const clock = new THREE.Clock();
 const tmpV = new THREE.Vector3();
 function update(dt) {
+  if (!(TP && (G.phase === 'play' || G.phase === 'won'))) avatar.visible = false;
   if (G.phase !== 'play' || G.paused) $('reticle')?.classList.remove('on');
   G.t += dt; skyMat.uniforms.uT.value = G.t;
   // flood
-  if (G.phase === 'play') {
+  if (G.phase === 'play' && !G.cut) {
     G.rate += dt * 0.00009;
     G.water += G.rate * dt;
     if (G.water >= G.failLevel) lose();
@@ -802,7 +990,7 @@ function update(dt) {
 
   if (DEMO && dt > 0) autopilot(dt);
   // movement
-  if (G.phase === 'play') {
+  if (G.phase === 'play' && !G.cut) {
     let fx = 0, fz = 0;
     if (keys.KeyW || keys.ArrowUp) fz -= 1; if (keys.KeyS || keys.ArrowDown) fz += 1;
     if (keys.KeyA || keys.ArrowLeft) fx -= 1; if (keys.KeyD || keys.ArrowRight) fx += 1;
@@ -834,6 +1022,10 @@ function update(dt) {
     camera.position.set(START_POS.x + Math.sin(a) * r * 0.6, groundFn(START_POS.x, START_POS.y) + 4 + k * 3, START_POS.y + Math.cos(a) * r * 0.5);
     camera.lookAt(THREE.MathUtils.lerp(c.x, START_POS.x, 0.4), THREE.MathUtils.lerp(c.y, camera.position.y, 0.35 + k * 0.3), THREE.MathUtils.lerp(c.z, START_POS.y, 0.4));
     G.water = (CFG.world?.water?.water ?? -2.6) + Math.sin(G.t * 0.5) * 0.15; water.position.y = G.water;
+  } else if (G.phase !== 'won' && TP) {
+    updateAvatar(dt, eye);
+    fovKick *= Math.pow(0.02, dt); const fv = (FPV && !AV.fly ? 70 : 62) + fovKick; if (Math.abs(camera.fov - fv) > 0.01) { camera.fov = fv; camera.updateProjectionMatrix(); }
+    if (shake > 0) { shake -= dt; camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake; }
   } else if (G.phase !== 'won') {
     camera.position.set(player.pos.x, eye + Math.abs(Math.sin(G.walkT || 0)) * 0.06, player.pos.z);
     camera.rotation.set(0, 0, 0, 'YXZ'); camera.rotation.order = 'YXZ';
@@ -843,13 +1035,14 @@ function update(dt) {
   } else {
     G.endT += dt;
     const k = Math.min(1, G.endT / 9), e = k * k * (3 - 2 * k);
-    camera.position.set(player.pos.x, THREE.MathUtils.lerp(eye, eye + 70, e), player.pos.z + e * 60);
-    camera.rotation.order = 'YXZ'; camera.rotation.y = THREE.MathUtils.lerp(player.yaw, 0, e); camera.rotation.x = THREE.MathUtils.lerp(player.pitch, -0.18, e);
+    if (TP) { nuwaBody.visible = true; finaleTick(dt); camera.position.set(player.pos.x + Math.sin(player.yaw) * (6 + e * 40), THREE.MathUtils.lerp(eye + 2, eye + 45, e), player.pos.z + Math.cos(player.yaw) * (6 + e * 40)); camera.lookAt(THREE.MathUtils.lerp(player.pos.x, 0, e), THREE.MathUtils.lerp(eye, 30, e), THREE.MathUtils.lerp(player.pos.z, -60, e)); avatar.position.y = Math.max(groundFn(player.pos.x, player.pos.z), G.water) + 0.35 + Math.sin(G.t * 1.6) * 0.08; }
+    else { camera.position.set(player.pos.x, THREE.MathUtils.lerp(eye, eye + 70, e), player.pos.z + e * 60);
+    camera.rotation.order = 'YXZ'; camera.rotation.y = THREE.MathUtils.lerp(player.yaw, 0, e); camera.rotation.x = THREE.MathUtils.lerp(player.pitch, -0.18, e); }
   }
 
   updateAmbience(dt); updateParticles(dt); if (G.phase === 'play') musicTick(dt, fl);
   // hand: idle sway, walk bob, reach on click, hidden outside play
-  hand.visible = G.phase === 'play' && !CFG.world?.hideHands; handL.visible = hand.visible && !!G.realHands;
+  hand.visible = G.phase === 'play' && !CFG.world?.hideHands && !TP; handL.visible = hand.visible && !!G.realHands;
   reachT = Math.max(0, reachT - dt);
   const rk = Math.sin(Math.min(1, (0.35 - reachT) / 0.35) * Math.PI) * (reachT > 0 ? 1 : 0);
   hand.position.set(HAND_REST.x - rk * 0.12 + Math.sin(G.t * 1.3) * 0.006, HAND_REST.y + rk * 0.12 + Math.abs(Math.sin(G.walkT || 0)) * -0.025 + (G.carrying ? 0.05 : 0), HAND_REST.z - rk * 0.35);
@@ -866,11 +1059,11 @@ function update(dt) {
     if (o.used) continue;
     if (o === G.carrying) {
       camera.getWorldDirection(tmpV);
-      const ho = CFG.world?.hand?.hold || [0, 0.12, -0.12]; const hp = hand.localToWorld(tmpA.set(ho[0], ho[1], ho[2]));
-      if (G.grabT < 1) { G.grabT = Math.min(1, (G.grabT || 0) + dt * 4); o.stone.position.lerpVectors(G.grabFrom, hp, easeOut(G.grabT)); o.stone.scale.setScalar(THREE.MathUtils.lerp(1, CFG.world?.hand?.holdScale ?? 0.16, G.grabT)); }
-      else { o.stone.position.copy(hp); o.stone.scale.setScalar(CFG.world?.hand?.holdScale ?? 0.16); }
+      const ho = CFG.world?.hand?.hold || [0, 0.12, -0.12]; const hp = FPV && !AV.fly ? camera.localToWorld(tmpA.set(0.05, -0.32 + Math.sin(G.t * 3) * 0.02, -1.1)) : TP ? avatar.localToWorld(tmpA.set(0, NUWA_H * 0.62 + Math.sin(G.t * 3) * 0.05, -0.75)) : hand.localToWorld(tmpA.set(ho[0], ho[1], ho[2]));
+      if (G.grabT < 1) { G.grabT = Math.min(1, (G.grabT || 0) + dt * 4); o.stone.position.lerpVectors(G.grabFrom, hp, easeOut(G.grabT)); o.stone.scale.setScalar(THREE.MathUtils.lerp(1, (FPV && !AV.fly ? 0.24 : TP ? 0.38 : CFG.world?.hand?.holdScale ?? 0.16), G.grabT)); }
+      else { o.stone.position.copy(hp); o.stone.scale.setScalar((FPV && !AV.fly ? 0.24 : TP ? 0.38 : CFG.world?.hand?.holdScale ?? 0.16)); if (TP && Math.random() < dt * 20) emit(hp, o.el.color, 1, 0.3, 0.4, 0.6); }
       o.stone.rotation.y += dt;
-    } else if (!o.taken) { const hv = o === G.hover; o.stone.rotation.y += dt * (hv ? 2.2 : 0.5); o.stone.position.y = o.home.y + Math.sin(G.t * 1.6 + o.home.x) * 0.15 + (hv ? 0.25 : 0); o.stone.scale.setScalar(THREE.MathUtils.lerp(o.stone.scale.x, hv ? 1.18 + Math.sin(G.t * 8) * 0.04 : 1, Math.min(1, dt * 10))); o.beam.material.opacity = hv ? 0.42 : 0.16 + Math.sin(G.t * 2 + o.home.z) * 0.06; }
+    } else if (!o.taken) { const hv = o === G.hover; o.stone.rotation.y += dt * (hv ? 2.2 : 0.5); o.stone.position.y = o.home.y + Math.sin(G.t * 1.6 + o.home.x) * 0.15 + (hv ? 0.25 : 0); o.stone.scale.setScalar(THREE.MathUtils.lerp(o.stone.scale.x, hv ? 1.18 + Math.sin(G.t * 8) * 0.04 : 1, Math.min(1, dt * 10))); o.beam.material.opacity = hv ? 0.42 : 0.16 + Math.sin(G.t * 2 + o.home.z) * 0.06; if (Math.random() < dt * 5) emit(tmpA.set(o.home.x + (Math.random() - 0.5) * 0.8, o.home.y + 0.3, o.home.z + (Math.random() - 0.5) * 0.8), o.el.color, 1, 0.15, 3, 2.2); }
   }
   // forging
   if (G.forging) {
@@ -881,14 +1074,10 @@ function update(dt) {
   } else if (G.furnace) { G.furnace.fire.intensity = 50 + Math.sin(G.t * 9) * 12; if (Math.random() < dt * 14) emit(new THREE.Vector3(FURNACE_POS.x + (Math.random() - .5), G.furnace.y + 2.4, FURNACE_POS.y + (Math.random() - .5)), 0xff9a3c, 1, 0.6, 1.6, 1.6); }
   // flights to the sky
   for (let i = flights.length - 1; i >= 0; i--) {
+    if (flights[i].nuwa) { nuwaFlight(flights[i], i, dt); continue; }
     const f = flights[i]; f.t += dt / 3.2; const k = Math.min(1, f.t), e = 1 - Math.pow(1 - k, 3);
     f.obj.position.lerpVectors(f.from, f.to, e); emit(f.obj.position, f.el.color, 3, 0.8, 0, 1.2); f.obj.position.y += Math.sin(k * Math.PI) * (CFG.world?.arc ?? 40); f.obj.scale.setScalar(1 + e * (CFG.world?.grow ?? 14)); f.obj.rotation.y += dt * 3;
-    if (k >= 1) {
-      f.obj.visible = false; flights.splice(i, 1); emit(f.to, f.el.color, 260, 9, 0, 2.4); emit(f.to, 0xffffff, 80, 5, 0, 1.6); flash(f.el.color); gong(); sfxMend(f.el.note); shake = 0.35; fovKick = 10; banner(`补天 ${['一','二','三','四','五'][G.chain.length - 1] || ''}`, `${G.chain.length} / 5 mended`, '#' + new THREE.Color(f.el.color).getHexString());
-      f.seg.mended = 0.001; const idx = EL.indexOf(f.el); G.restoreAnim[idx] = 0.001;
-      say(`${f.el.name}补上了天。${f.el.zh}气归于大地。`);
-      if (G.chain.length === 5) setTimeout(win, 1800);
-    }
+    if (k >= 1) { flights.splice(i, 1); mendArrive(f); }
   }
   // crack mending + region restoration
   crackSegs.forEach(s => {
@@ -903,8 +1092,8 @@ function update(dt) {
       const n1 = 0.75 + 0.25 * Math.sin(G.t * 23 + s.center.x) * Math.sin(G.t * 9.7 + s.center.y);
       s.rib.parts.forEach((pp, j) => {
         const cnt = pp.core.geometry.index.count, show = Math.floor(cnt * Math.min(1, tear * (j ? 1.6 : 1.15) - (j ? 0.5 : 0)) / 6) * 6;
-        pp.core.geometry.setDrawRange(0, Math.max(0, show)); pp.glow.geometry.setDrawRange(0, Math.max(0, show));
-        if (s.el) { pp.core.material.color.lerpColors(new THREE.Color(0xfff2dc), new THREE.Color(s.el.color), m); pp.glow.material.color.set(s.el.color); }
+        pp.core.geometry.setDrawRange(0, Math.max(0, show)); pp.glow.geometry.setDrawRange(0, Math.max(0, show)); pp.dark.geometry.setDrawRange(0, Math.max(0, show)); pp.dark.material.opacity = hot ? 0.85 : THREE.MathUtils.lerp(0.85, 0, m);
+        if (s.el) { pp.core.material.color.lerpColors(new THREE.Color(0xffe2b0), new THREE.Color(s.el.color), m); pp.glow.material.color.set(s.el.color); }
         pp.core.material.opacity = hot ? (0.85 * n1 + bf * 0.3) : THREE.MathUtils.lerp(0.95, G.phase === 'won' ? 0.25 : 0.4, m);
         pp.glow.material.opacity = hot ? (0.45 + 0.25 * Math.sin(G.t * 2.2 + j + s.center.x) + bf * 0.5) : THREE.MathUtils.lerp(0.8, 0.12, m);
       });
@@ -942,6 +1131,10 @@ function update(dt) {
   if (G.phase === 'play') {
     let p = '';
     if (G.forging) p = '炼石中…… · Forging';
+    else if (TP && G.cut) p = '';
+    else if (TP && G.carrying && furnaceDist() < (CFG.world?.throwRange ?? 7)) p = `按 E 或左键，把${G.carrying.el.zh}石投入铜炉 · E / click: into the furnace`;
+    else if (TP && G.carrying) p = `托着${G.carrying.el.zh}石，回到铜炉 · Carry it to the furnace`;
+    else if (TP) { const o = nearestOreTP(); if (o) p = `按 E 或左键拾起${o.el.zh}石 · E / click: pick up ${o.el.en}`; }
     else if (G.carrying && nearFurnace()) p = `对准铜炉，点击扔进去 · Click to throw it in`;
     else if (G.carrying) p = `携带：${G.carrying.el.name}（${G.carrying.el.zh}）· 回到炉边`;
     else { const o = nearestOre(); if (o) p = `对准${o.el.name}，点击抓取 · Click to grab`; }
@@ -950,15 +1143,15 @@ function update(dt) {
     let rc = null, rl = '';
     if (!G.forging && !throws.length) {
       if (!G.carrying) {
-        let bd = 1e9; for (const o of G.ores) { if (o.taken || o.used) continue; const dd = o.home.distanceTo(camera.position); if (dd < bd && aimAt(o.home, 14, o === G.lastRc ? 1.5 : 1)) { bd = dd; rc = o; } }
+        let bd = 1e9; for (const o of G.ores) { if (o.taken || o.used) continue; const dd = o.home.distanceTo(camera.position); if (dd < bd && aimAt(o.home, 30, o === G.lastRc ? 1.5 : 1)) { bd = dd; rc = o; } }
         G.hover = rc; if (rc) rl = `抓取 ${rc.el.zh} · Grab`;
       } else {
         G.hover = null;
         const fp = tmpV.set(FURNACE_POS.x, G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.8, FURNACE_POS.y);
-        if (aimAt(fp, 18) || Math.hypot(FURNACE_POS.x - player.pos.x, FURNACE_POS.y - player.pos.z) < 10) { rc = G.carrying; rl = `投入铜炉 · Throw`; }
+        if (aimAt(fp, 35) || Math.hypot(FURNACE_POS.x - player.pos.x, FURNACE_POS.y - player.pos.z) < 10) { rc = G.carrying; rl = `投入铜炉 · Throw`; }
       }
     } else G.hover = null;
-    const R = $('reticle'); R.classList.add('on'); R.classList.toggle('hot', !!rc);
+    const R = $('reticle'); R.classList.toggle('on', !TP); R.classList.toggle('hot', !!rc);
     if (rc) R.style.setProperty('--rc', '#' + new THREE.Color(rc.el.color).getHexString());
     R.querySelector('span').textContent = rl;
     if (rc && rc !== G.lastRc) pluck(rc.el.note * 2, 0.4, 0.05, 0.06);
@@ -976,6 +1169,7 @@ rain.frustumCulled = false; scene.add(rain);
 const rainSeed = Array.from({ length: RAIN_N }, () => [Math.random() * 40 - 20, Math.random() * 25, Math.random() * 40 - 20, 18 + Math.random() * 10]);
 let boltT = 4, boltFlash = 0;
 function updateAmbience(dt) {
+  updateBolts(dt);
   rainInit();
   const amt = G.phase === 'won' ? 0 : 1 - (G.chain?.length || 0) / 6; rain.material.opacity = 0.55 * amt; if (rainEl) rainEl.volume = Math.min(1, 0.7 * amt); if (rainHiss) rainHiss.gain.value = 0.3 * amt; if (!rainEl && !G.rainSynth && AC && amt > 0.05 && G.phase !== 'title') for (let k = 0; k < 2; k++) if (Math.random() < dt * 18 * amt) noiseBurst(0.03, 1500 + Math.random() * 3000, 800, 0.05 + Math.random() * 0.06, 'bandpass', Math.random() * 0.05); rain.visible = amt > 0.02;
   const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
@@ -987,7 +1181,7 @@ function updateAmbience(dt) {
   rainGeo.attributes.position.needsUpdate = true;
   if (G.phase === 'play' || G.phase === 'cine') {
     boltT -= dt;
-    if (boltT <= 0) { boltT = (6 + Math.random() * 6) * (0.8 + (G.chain?.length || 0) * 0.3); boltFlash = 1.4; flash(0xdfe6ff); setTimeout(() => { flash(0xbfd0ff); boltFlash = 1; }, 120); const near = Math.random(); setTimeout(() => { if (CFG.assets?.thunder) { const L = [].concat(CFG.assets.thunder); const t = new Audio(L[Math.floor(Math.random() * L.length)]); t.volume = 0.45 + near * 0.55; t.play().catch(() => {}); } else thunderSfx(near); shake = Math.max(shake, 0.2); }, 150 + (1 - near) * 1600);
+    if (boltT <= 0) { boltT = (6 + Math.random() * 6) * (0.8 + (G.chain?.length || 0) * 0.3); boltFlash = 1.4; flash(0xdfe6ff); spawnBolt(); if (Math.random() < 0.4) setTimeout(spawnBolt, 140); setTimeout(() => { flash(0xbfd0ff); boltFlash = 1; }, 120); const near = Math.random(); setTimeout(() => { if (CFG.assets?.thunder) { const L = [].concat(CFG.assets.thunder); const t = new Audio(L[Math.floor(Math.random() * L.length)]); t.volume = 0.45 + near * 0.55; t.play().catch(() => {}); } else thunderSfx(near); shake = Math.max(shake, 0.2); }, 150 + (1 - near) * 1600);
       const c = crackSegs[Math.floor(Math.random() * crackSegs.length)]; if (c && !c.mended) emit(c.center, 0xdfe8ff, 60, 6, 0, 1.2); }
   }
   if ((G.phase === 'play' || G.phase === 'cine') && Math.random() < dt * 0.12 * (1 - (G.chain?.length || 0) / 5)) { shake = Math.max(shake, 0.35); drum(0.25); noiseBurst(1.5, 120, 50, 0.25, 'lowpass'); say('天又裂开一道口子…… · The sky cracks further…', 2200); }
@@ -1065,7 +1259,7 @@ const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2,
 
 function win() {
   if (G.phase !== 'play') return;
-  G.phase = 'won'; G.endT = 0; $('hud').hidden = true; $('keys') && ($('keys').hidden = true); say('天，合上了。人间，回来了。 · The sky is whole. The world returns.', 6000); document.exitPointerLock?.();
+  G.phase = 'won'; G.endT = 0; for (let k = 1; k < 8; k++) G['fin' + k] = 0; G.ores.forEach(o => { o.beam.visible = false; o.light.visible = false; }); $('hud').hidden = true; $('keys') && ($('keys').hidden = true); say('天，合上了。人间，回来了。 · The sky is whole. The world returns.', 6000); document.exitPointerLock?.();
   $('prompt').classList.remove('on'); $('act').hidden = true;
   EL.forEach((e, i) => pluck(e.note, 5, 0.16, i * 0.35)); EL.forEach(e => pluck(e.note / 2, 6, 0.1, 2));
   crackSegs.forEach(s => { s.mended = 1; emit(s.center, 0xfff2c0, 120, 12, 0, 3); }); flash(0xfff2c0); if (droneG) droneG.gain.linearRampToValueAtTime(0.09, AC.currentTime + 4);
@@ -1076,7 +1270,7 @@ function win() {
     $('end-time').textContent = fmt(G.t - G.t0); $('end-miss').textContent = G.mistakes;
     $('end-order').textContent = G.chain.map(k => EL.find(e => e.key === k).zh).join(' → ');
     $('end').hidden = false;
-  }, 12000);
+  }, TP ? 38000 : 12000);
 }
 function lose() {
   G.phase = 'lost'; document.exitPointerLock?.(); stinger(); narrate('洪水吞没了山谷。一切，都沉入了黑暗。', { rate: 0.7, pitch: 0.4 }); thud();
@@ -1089,8 +1283,8 @@ function resetGame() {
   G.phase = 'play'; G.water = CFG.world?.water?.water ?? -2.6; G.rate = CFG.world?.water?.rate ?? 0.034; G.carrying = null; G.forging = 0; G.forgeEl = null;
   G.chain = []; G.mistakes = 0; throws.length = 0; G.restoreAnim = [0, 0, 0, 0, 0]; U.uAll.value = 0; G.t0 = G.t; flights.length = 0;
   for (const o of G.ores) { o.taken = false; o.used = false; o.stone.visible = true; o.stone.scale.setScalar(1); o.stone.position.copy(o.home); o.beam.visible = true; o.light.visible = true; }
-  crackSegs.forEach(s => { s.mended = 0; s.el = null; s.mesh.material.color.set(0xfff6e0); if (s.rib) s.rib.parts.forEach(pp => { pp.core.material.color.set(0xfff2dc); pp.glow.material.color.set(0xff4a20); }); });
-  G.villagers.forEach(v => v.visible = false);
+  crackSegs.forEach(s => { s.mended = 0; s.el = null; s.mesh.material.color.set(0xfff6e0); if (s.rib) s.rib.parts.forEach(pp => { pp.core.material.color.set(0xffe2b0); pp.glow.material.color.set(0xff4a20); }); });
+  G.villagers.forEach(v => v.visible = false); G.cut = false; AV.fly = null; AV.camInit = false; nuwaBody.scale.setScalar(1); pillars.splice(0).forEach(p => scene.remove(p.m)); if (worldB) { worldB.visible = false; if (splatMesh) splatMesh.visible = true; if (G.furnace) G.furnace.obj.visible = true; }
   player.pos.set(START_POS.x, groundFn(START_POS.x, START_POS.y), START_POS.y); player.yaw = 0; player.pitch = 0.12;
   $('end').hidden = true; $('lose').hidden = true; $('intro').hidden = true; $('hud').hidden = false;
   G.n50 = G.n80 = 0; hudRing(); say('第一步：跟着金色光点找到原石，点击抓起 · Follow the golden lights and grab an ore', 7000);
@@ -1099,7 +1293,8 @@ function startGame() { audioInit(); musicInit(); bgmPlay(); resetGame(); G.start
 let seenIntro = false;
 async function cinematic() {
   audioInit(); musicInit(); bgmPlay(); G.phase = 'cine'; G.cineT = 0; $('intro').hidden = true; const c = $('cine'); c.hidden = false; const line = $('cine-line');
-  const lines = [['往古之时\n四极废　九州裂', 'In ancient times, the four pillars broke and the nine lands split.', 4500], ['天　塌了', 'The sky fell.', 3200], ['洪水从天的裂缝里倾泻而下\n世界失去了颜色', 'A flood poured through the crack, and the world lost its colour.', 5500], ['只有你　女娲\n能把天补上', 'Only you, Nüwa, can mend the sky.', 4200], ['在洪水吞没山谷之前\n找到五行之石', 'Find the five elemental stones before the flood takes the valley.', 4800]];
+  const lines = TP ? [['远古之时　共工与颛顼争帝\n共工战败　怒触不周山', 'In the remote past Gonggong fought Zhuanxu for heaven\'s throne, lost, and in his rage struck Mount Buzhou.', 5200], ['天柱折　天塌了一角\n大地裂开深沟', 'The pillar of heaven broke; a corner of the sky fell in and the earth split open.', 4800], ['天火不灭　洪水不息\n猛兽毒虫残害百姓', 'Fire would not die, the flood would not stop, and beasts preyed on the people.', 5000], ['女娲看见人间受苦\n决心修补苍天', 'Nüwa saw the people suffer and resolved to mend the sky.', 4400], ['走遍山川　拣选五色石\n按五行相生　木火土金水', 'Search the valley for the five-coloured stones, in the order wood, fire, earth, metal, water.', 5200]]
+    : [['往古之时\n四极废　九州裂', 'In ancient times, the four pillars broke and the nine lands split.', 4500], ['天　塌了', 'The sky fell.', 3200], ['洪水从天的裂缝里倾泻而下\n世界失去了颜色', 'A flood poured through the crack, and the world lost its colour.', 5500], ['只有你　女娲\n能把天补上', 'Only you, Nüwa, can mend the sky.', 4200], ['在洪水吞没山谷之前\n找到五行之石', 'Find the five elemental stones before the flood takes the valley.', 4800]];
   let skip = false; c.onclick = () => { skip = true; };
   for (const [t, en, ms] of lines) {
     if (skip) break; line.classList.remove('on'); await new Promise(r => setTimeout(r, 300)); line.innerHTML = ''; line.append(t, Object.assign(document.createElement('small'), { textContent: en })); line.classList.add('on');
@@ -1132,4 +1327,4 @@ addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; cam
 })();
 
 // test / recording hooks
-window.__butian = { crackSegs, hand, handL, FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };
+window.__butian = { NEXT, AV, crackSegs, hand, handL, FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };

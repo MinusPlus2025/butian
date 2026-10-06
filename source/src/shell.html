@@ -92,6 +92,9 @@ button.ghost { background: transparent; color: var(--paper); border: 1px solid v
 #cine { position: fixed; inset: 0; z-index: 20; background: radial-gradient(ellipse at 50% 50%, rgba(20,6,4,.15) 0%, rgba(0,0,0,.55) 60%, rgba(0,0,0,.92) 100%); box-shadow: inset 0 12vh 0 #000, inset 0 -12vh 0 #000; display: grid; place-items: center; padding: 24px; cursor: pointer; }
 #cine-line { font: 400 clamp(1.8rem, 4.2vw, 3rem) var(--brush); letter-spacing: .22em; color: #efe2cc; text-align: center; max-width: 90vw; line-height: 1.6; white-space: pre-line; word-break: keep-all; opacity: 0; transition: opacity 1.2s; text-shadow: 0 0 30px rgba(200,40,30,.5); }
 #cine-line.on { opacity: 1; }
+#cine.soft { background: linear-gradient(0deg, rgba(0,0,0,.55), transparent 45%); box-shadow: none; pointer-events: none; place-items: end center; padding-bottom: 10vh; cursor: default; }
+#cine.soft #cine-line { font-size: clamp(1.4rem, 3vw, 2.2rem); text-shadow: 0 2px 12px #000; }
+#cine.soft .skip { display: none; }
 #cine-line small { display: block; margin-top: .9rem; font: italic 400 clamp(1rem, 2.2vw, 1.4rem) var(--latin); letter-spacing: .04em; color: #bfae98; text-shadow: none; }
 #cine .skip { position: absolute; right: 20px; bottom: 20px; font-size: .8rem; color: #777; }
 #sub { position: fixed; left: 50%; width: max-content; top: calc(110px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 21; font: 400 clamp(1.3rem, 2.6vw, 1.8rem) var(--brush); letter-spacing: .12em; white-space: pre-line; word-break: keep-all; line-height: 1.5; color: #ffd9c0; text-shadow: 0 0 18px rgba(190,40,30,.85), 0 2px 4px #000; opacity: 0; transition: opacity .4s; max-width: calc(100vw - 32px); text-align: center; pointer-events: none; }
@@ -128,7 +131,7 @@ button.ghost { background: transparent; color: var(--paper); border: 1px solid v
   <div id="cross"></div>
   <div id="prompt"></div>
   <div id="reticle"><i></i><span></span></div>
-  <div id="keys"><div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动</div><div><kbd>鼠标</kbd> 转视角（先点一下画面）</div><div><kbd>左键</kbd> 抓石 / 扔进炉</div><div><kbd>Shift</kbd> 冲刺 <kbd>空格</kbd> 跳</div><div><kbd>Esc</kbd> 暂停 / 退出</div><div style="color:#ffd060">● 跟着地上的金色光点走</div></div>
+  <div id="keys"><div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动</div><div><kbd>鼠标</kbd> 转视角（先点一下画面）</div><div><kbd>E</kbd>/<kbd>左键</kbd> 靠近石头拾起 · 炉边投炉</div><div><kbd>Shift</kbd> 冲刺 <kbd>空格</kbd> 跳</div><div><kbd>Esc</kbd> 暂停 / 退出</div><div style="color:#ffd060">● 跟着地上的金色光点走</div></div>
   <div id="msg"></div>
 </div>
 <button id="act" hidden aria-label="Interact">取</button>
