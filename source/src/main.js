@@ -459,6 +459,7 @@ function setPause(on) {
   if (G.phase !== 'play') on = false;
   G.paused = on; $('pause').hidden = !on;
   if (AC) { if (on) AC.suspend?.(); else AC.resume?.(); }
+  if (rainEl) { if (on) rainEl.pause(); else rainEl.play().catch(() => {}); }
   if (on) document.exitPointerLock?.();
 }
 function quitToTitle() { setPause(false); G.phase = 'title'; $('hud').hidden = true; $('act').hidden = true; $('end').hidden = true; $('lose').hidden = true; $('intro').hidden = false; $('guide').hidden = true; if (droneG && AC) droneG.gain.value = 0; }
