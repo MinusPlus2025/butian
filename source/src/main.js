@@ -229,11 +229,12 @@ async function buildSplatWorld(W) {
   const uResD = new dyno.DynoVec4({ value: new THREE.Vector4() });   // regions 1-4 restore
   const uRes5 = new dyno.DynoVec4({ value: new THREE.Vector4() });   // x: region 5, y: all, z: crack 5 mended
   const uMend = new dyno.DynoVec4({ value: new THREE.Vector4() });   // crack 1-4 mended
+  const uAnim = new dyno.DynoVec4({ value: new THREE.Vector4() });   // x: time, y: flood surface height
   const mod = dyno.dynoBlock({ gsplat: dyno.Gsplat }, { gsplat: dyno.Gsplat }, ({ gsplat }) => {
     const d = new dyno.Dyno({
-      inTypes: { gsplat: dyno.Gsplat, r0: 'vec4', r1: 'vec4', r2: 'vec4', r3: 'vec4', r4: 'vec4', c0: 'vec4', c1: 'vec4', c2: 'vec4', c3: 'vec4', c4: 'vec4', ra: 'vec4', rb: 'vec4', mm: 'vec4' },
+      inTypes: { gsplat: dyno.Gsplat, r0: 'vec4', r1: 'vec4', r2: 'vec4', r3: 'vec4', r4: 'vec4', c0: 'vec4', c1: 'vec4', c2: 'vec4', c3: 'vec4', c4: 'vec4', ra: 'vec4', rb: 'vec4', mm: 'vec4', an: 'vec4' },
       outTypes: { gsplat: dyno.Gsplat },
-      inputs: { gsplat, r0: uRegD[0], r1: uRegD[1], r2: uRegD[2], r3: uRegD[3], r4: uRegD[4], c0: uCrk[0], c1: uCrk[1], c2: uCrk[2], c3: uCrk[3], c4: uCrk[4], ra: uResD, rb: uRes5, mm: uMend },
+      inputs: { gsplat, r0: uRegD[0], r1: uRegD[1], r2: uRegD[2], r3: uRegD[3], r4: uRegD[4], c0: uCrk[0], c1: uCrk[1], c2: uCrk[2], c3: uCrk[3], c4: uCrk[4], ra: uResD, rb: uRes5, mm: uMend, an: uAnim },
       statements: ({ inputs, outputs }) => dyno.unindentLines(`
         ${outputs.gsplat} = ${inputs.gsplat};
         vec4 regs[5] = vec4[5](${inputs.r0}, ${inputs.r1}, ${inputs.r2}, ${inputs.r3}, ${inputs.r4});
@@ -253,6 +254,16 @@ async function buildSplatWorld(W) {
         vec3 vivid = clamp(vec3(l) + (c - vec3(l)) * 2.4, 0.0, 1.0) * 1.08;
         vec3 grey = mix(vec3(pow(l, 1.12)) * vec3(0.88, 0.9, 0.94), c, ${(CFG.world?.stormColor ?? 0.5).toFixed(2)});
         vec3 outc = mix(grey, vivid, clamp(m, 0.0, 1.0));
+        // the world's own torrent flows: muddy, low-lying splats get travelling bands of light and a swell down the valley
+        float tA = ${inputs.an}.x;
+        float muddy = smoothstep(0.02, 0.08, c.r - c.b) * (1.0 - smoothstep(0.25, 0.4, c.r - c.b)) * (1.0 - smoothstep(${inputs.an}.y + 1.5, ${inputs.an}.y + 4.0, p.y));
+        float flow = sin(p.z * 0.9 - tA * 3.2 + sin(p.x * 0.6 + tA * 0.7) * 1.8) * 0.5 + sin(p.z * 2.3 - tA * 5.1 + p.x * 0.9) * 0.3;
+        outc *= 1.0 + muddy * (0.16 * flow + 0.05);
+        ${outputs.gsplat}.center.y += muddy * 0.12 * flow;
+        // the sky crack's molten light breathes and flickers along its length
+        float hot = smoothstep(0.22, 0.45, c.r - c.b) * smoothstep(12.0, 18.0, p.y);
+        float pulse = 0.65 + 0.35 * sin(tA * 2.4 + p.z * 0.18) + 0.25 * sin(tA * 9.0 + p.z * 1.3 + p.x) * sin(tA * 5.3);
+        outc = mix(outc, outc * (0.55 + 0.9 * pulse) + vec3(0.25, 0.08, 0.0) * pulse * 0.4, hot);
         // lightning lights the whole valley for a moment, peaks and cloud more than the valley floor
         float fl = ${inputs.rb}.w;
         outc += outc * fl * (0.18 + 0.32 * smoothstep(0.0, 30.0, p.y)) + vec3(0.015, 0.02, 0.035) * fl;
@@ -278,7 +289,7 @@ async function buildSplatWorld(W) {
   splatMesh.__sync = () => {
     EL.forEach((e, i) => uRegD[i].value.copy(U.uReg.value[i]));
     const r = U.uRes.value; const cm = crackSegs.map(c => c.mended);
-    uResD.value.set(r[0], r[1], r[2], r[3]); uRes5.value.set(r[4], U.uAll.value, cm[4], Math.min(1.4, boltFlash)); uMend.value.set(cm[0], cm[1], cm[2], cm[3]);
+    uResD.value.set(r[0], r[1], r[2], r[3]); uRes5.value.set(r[4], U.uAll.value, cm[4], Math.min(1.4, boltFlash)); uAnim.value.set(G.t, CFG.world?.floodTop ?? 0.5, 0, 0); uMend.value.set(cm[0], cm[1], cm[2], cm[3]);
     splatMesh.updateVersion();
   };
   await splatMesh.initialized; loadWorldB();
@@ -590,7 +601,7 @@ async function setupProps() {
   }
   const f = await makeFurnace();
   const fy = groundFn(FURNACE_POS.x, FURNACE_POS.y);
-  f.position.set(FURNACE_POS.x, fy, FURNACE_POS.y); f.rotation.y = CFG.world?.furnaceRot ?? Math.PI / 2; scene.add(f);
+  f.position.set(FURNACE_POS.x, fy + (CFG.world?.furnaceLift ?? 0), FURNACE_POS.y); f.rotation.y = CFG.world?.furnaceRot ?? Math.PI / 2; scene.add(f);
   const fire = new THREE.PointLight(0xff8a3c, 60, 22); fire.position.set(FURNACE_POS.x, fy + 3.2, FURNACE_POS.y); scene.add(fire);
   const ember = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 10), new THREE.MeshBasicMaterial({ color: 0xff7a20, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false })); ember.scale.y = 0.35;
   ember.position.set(FURNACE_POS.x, fy + (CFG.world?.furnaceSize ?? 3) * 0.78, FURNACE_POS.y); scene.add(ember);
@@ -916,7 +927,7 @@ function heldShow(o) {
   const b = new THREE.Box3().setFromObject(c), sz = b.getSize(new THREE.Vector3()), ct = b.getCenter(new THREE.Vector3());
   const g = new THREE.Group(); c.position.sub(ct); g.add(c); g.scale.setScalar((CFG.world?.hand?.heldSize ?? 0.11) / Math.max(sz.x, sz.y, sz.z));
   const H = CFG.world?.hand || {}; g.position.fromArray(H.held || [-0.062, 0.2, -0.06]);
-  c.traverse(m => { if (m.isMesh) { m.material = m.material.clone(); m.material.depthTest = false; m.renderOrder = 2000; } });
+  c.traverse(m => { if (m.isMesh) { m.material = m.material.clone(); m.material.depthTest = true; m.material.depthWrite = true; m.material.transparent = false; m.material.opacity = 1; m.material.side = THREE.FrontSide; m.renderOrder = 0; } });
   hand.add(g); G.held = { o, g };
 }
 function heldHide() { if (G.held) { hand.remove(G.held.g); G.held = null; } }
@@ -1013,8 +1024,8 @@ function fuseAndFly() {
   banner('五 石 合 炼', 'The five stones fuse into one', '#ffe2a0'); gong(); drum(0.8); shake = 0.6; flash(0xfff0d0);
   EL.forEach((e, k) => setTimeout(() => emit(top, e.color, 90, 5, 4, 1.8), k * 120));
   gems.forEach(m => scene.remove(m)); gems.length = 0;
-  const orb = new THREE.Group(); const core = new THREE.Mesh(new THREE.SphereGeometry(0.55, 32, 24), lavaMat); orb.add(core);
-  const halo = new THREE.Mesh(new THREE.SphereGeometry(1.1, 20, 14), new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })); orb.add(halo);
+  const orb = new THREE.Group(); const core = new THREE.Mesh(new THREE.SphereGeometry(1.0, 40, 30), lavaMat); orb.add(core);
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(1.9, 24, 16), new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })); orb.add(halo);
   { const pl = new THREE.PointLight(0xffe0b0, 12, 14); orb.add(pl); }
   orb.position.copy(top); scene.add(orb);
   say('五色石熔成了石浆。女娲托起它，飞向天裂 · The five stones melt into one. Nüwa carries it to the broken sky.', 5000);
@@ -1028,6 +1039,13 @@ let shake = 0;
 
 
 // the molten stone is pressed into one stretch of the crack
+// a stream of molten five-coloured stone poured from the orb up into the crack
+let pour = null;
+function pourTo(from, to) {
+  if (pour) { scene.remove(pour); pour.geometry.dispose(); }
+  const mid = from.clone().lerp(to, 0.5).add(new THREE.Vector3(0, 1.5, 0));
+  pour = new THREE.Mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(from.clone(), mid, to.clone()), 40, 0.35, 12), lavaMat); pour.userData.t = 0; scene.add(pour);
+}
 function mendSeg(seg, el, n) {
   emit(seg.center, el.color, 220, 9, 0, 2.4); emit(seg.center, 0xffffff, 60, 5, 0, 1.6); flash(el.color); gong(); sfxMend(el.note); shake = 0.3; fovKick = 6;
   banner(`补天 ${['一', '二', '三', '四', '五'][n]}`, `${n + 1} / 5 sealed`, '#' + new THREE.Color(el.color).getHexString());
@@ -1044,7 +1062,7 @@ function mendArrive(f) {
 }
 // Nüwa gathers herself, soars to the crack with the molten stone above her head, seals it, then glides back down
 function nuwaFlightAll(f, i, dt) {
-  const A = AV.fly; A.t += dt; const up = 1.2, rise = 3.8, per = 1.7, hold = 1.4, down = 2.8, C = crackSegs.map(c => c.center);
+  const A = AV.fly; A.t += dt; const up = 1.2, rise = 3.8, per = 2.4, hold = 1.6, down = 2.8, C = crackSegs.map(c => c.center);
   const ground = () => Math.max(groundFn(A.back.x, A.back.z), G.water) + 0.35;
   const off = c => tmpB.copy(c).add(new THREE.Vector3(0, -NUWA_H - 1, 6));
   lavaMat.uniforms.uT.value = G.t;
@@ -1057,9 +1075,10 @@ function nuwaFlightAll(f, i, dt) {
     AV.face = THREE.MathUtils.lerp(AV.face, Math.atan2(-(to.x - f.from2.x), -(to.z - f.from2.z)), dt * 4);
   } else if (A.t < tHold + 0.001) {
     const q = Math.min(C.length - 1, (A.t - tSweep) / per), n = Math.floor(q), k = q - n;
-    f.sealed = f.sealed || 0; while (f.sealed <= n) { mendSeg(crackSegs[f.sealed], crackSegs[f.sealed].el, f.sealed); f.sealed++; }
+    f.sealed = f.sealed || 0; while (f.sealed <= n) { pourTo(f.obj.position, crackSegs[f.sealed].center); mendSeg(crackSegs[f.sealed], crackSegs[f.sealed].el, f.sealed); f.sealed++; f.obj.scale.multiplyScalar(0.88); }
+    if (pour) { pour.userData.t += dt; pour.visible = pour.userData.t < 1.1; }
     if (n < C.length - 1) { const e = k * k * (3 - 2 * k); avatar.position.lerpVectors(off(C[n]).clone(), off(C[n + 1]), e); AV.face = THREE.MathUtils.lerp(AV.face, Math.atan2(-(C[n + 1].x - C[n].x), -(C[n + 1].z - C[n].z)), dt * 4); }
-  } else if (A.t < tDown) { if (f.sealed < C.length) { mendSeg(crackSegs[C.length - 1], crackSegs[C.length - 1].el, C.length - 1); f.sealed = C.length; } f.obj.scale.multiplyScalar(Math.max(0, 1 - dt * 2)); avatar.position.y += Math.sin(A.t * 2) * 0.003; if (!f.top) f.top = avatar.position.clone(); }
+  } else if (A.t < tDown) { if (pour) { scene.remove(pour); pour = null; } if (f.sealed < C.length) { mendSeg(crackSegs[C.length - 1], crackSegs[C.length - 1].el, C.length - 1); f.sealed = C.length; } f.obj.scale.multiplyScalar(Math.max(0, 1 - dt * 2)); avatar.position.y += Math.sin(A.t * 2) * 0.003; if (!f.top) f.top = avatar.position.clone(); }
   else {
     if (f.obj.parent) scene.remove(f.obj);
     const k = Math.min(1, (A.t - tDown) / down), e = k * k * (3 - 2 * k);
@@ -1067,7 +1086,7 @@ function nuwaFlightAll(f, i, dt) {
     if (k >= 1) { flights.splice(i, 1); AV.fly = null; G.cut = false; player.pos.copy(A.back); win(); return; }
   }
   if (A.t >= up && A.t < tHold + 0.5) { f.obj.position.copy(avatar.position).add(tmpV.set(0, NUWA_H + 0.6, 0)); f.obj.rotation.y += dt * 2; if (Math.random() < 0.8) emit(f.obj.position, EL[(Math.random() * 5) | 0].color, 3, 0.6, -1, 1.2); }
-  avatar.rotation.y = AV.face; avatar.rotation.x = THREE.MathUtils.lerp(avatar.rotation.x, A.t > up && A.t < tHold ? -0.3 : 0, Math.min(1, dt * 3)); avatar.rotation.z = Math.sin(A.t * 1.3) * 0.05;
+  avatar.rotation.y = AV.face; avatar.rotation.x = THREE.MathUtils.lerp(avatar.rotation.x, A.t > up && A.t < tSweep ? -0.3 : (A.t < tHold ? 0.22 : 0), Math.min(1, dt * 3)); // leans into the climb, then tips back to pour upward avatar.rotation.z = Math.sin(A.t * 1.3) * 0.05;
   // camera: off to the side and below, travelling with her along the crack
   const tgt = tmpA.copy(avatar.position).add(tmpB.set(0, 1.2, 0));
   const want = new THREE.Vector3(tgt.x + 10, tgt.y - 2.5, tgt.z + 6);
@@ -1157,7 +1176,7 @@ function finaleTick(dt) {
   if (t > 14 && t < 21) for (let k = 0; k < 5; k++) emit(new THREE.Vector3(player.pos.x + (Math.random() - 0.5) * 70, 16 + Math.random() * 12, player.pos.z - 15 + (Math.random() - 0.5) * 70), Math.random() < 0.6 ? 0xb0a080 : 0xffc870, 1, 0.4, -1.6, 5);
   G.water = THREE.MathUtils.lerp(G.water, t > 14 ? (CFG.world?.water?.water ?? -2.6) - 4 : G.water, dt * 0.35);
   once(4, 20.5, () => { flash(0xffffff); if (worldB) { worldB.visible = true; water.visible = false; if (splatMesh) splatMesh.visible = false; if (G.furnace) G.furnace.obj.visible = false; G.villagers.forEach(v => v.visible = false); } EL.forEach((e, i) => pluck(e.note, 5, 0.16, i * 0.3)); });
-  once(5, 22, () => caption('苍天补　四极正\n淫水涸　冀州平', 'The sky was mended and the four pillars stood upright; the flood dried and the land was at peace.', 6500));
+  once(5, 22, () => caption('苍天补好　四极端正\n洪水干涸　冀州太平', 'The sky was mended and the four pillars stood upright; the flood dried and the land was at peace.', 6500));
   once(6, 29.5, () => caption('天地复原　百姓重生\n女娲耗尽了力量　身归天地', 'Heaven and earth were restored and the people lived on. Spent, Nüwa gave herself back to the world.', 7000));
   // the whole world is her gift: the title page's 礼 seal comes down on it, full size
   once(7, 36.5, () => caption('这片山河　是女娲留给人间的礼物', 'This world is the gift Nüwa left to us.', 6000));
