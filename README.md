@@ -1,9 +1,6 @@
 # 补天 Mending the Sky
 
-Tripothon S1 参赛作品（游戏赛道 · Tripo + World Labs 工具赛道）
-
 - 在线试玩：https://minusplus2025.github.io/butian/
-- 自动演示：https://minusplus2025.github.io/butian/?demo
 
 天塌了，洪水不息。你是女娲：在洪水淹没山谷之前，按五行相生之序炼石补天。
 
