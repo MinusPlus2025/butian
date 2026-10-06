@@ -288,7 +288,7 @@ async function buildSplatWorld(W) {
       g.traverse(o => { if (o.isMesh) { if (!W.showCollider) o.material.visible = false; groundMeshes.push(o); } });
       scene.add(g); g.updateMatrixWorld(true);
       const ray = new THREE.Raycaster(); const down = new THREE.Vector3(0, -1, 0);
-      groundFn = (x, z) => { ray.set(new THREE.Vector3(x, W.rayTop ?? 400, z), down); const h = ray.intersectObjects(groundMeshes, false)[0]; return h ? h.point.y : (W.floor ?? 0); };
+      groundFn = (x, z, fromY) => { ray.set(new THREE.Vector3(x, fromY ?? W.rayTop ?? 400, z), down); let h = ray.intersectObjects(groundMeshes, false)[0]; if (!h && fromY != null) { ray.set(new THREE.Vector3(x, W.rayTop ?? 400, z), down); h = ray.intersectObjects(groundMeshes, false)[0]; } return h ? h.point.y : (W.floor ?? 0); };
       groundLow = (x, z) => { ray.set(new THREE.Vector3(x, W.rayTop ?? 400, z), down); const hs = ray.intersectObjects(groundMeshes, false); return hs.length ? hs[hs.length - 1].point.y : (W.floor ?? 0); };
     }
   } else groundFn = () => (W.floor ?? 0);
@@ -1026,20 +1026,22 @@ function update(dt) {
     const len = Math.hypot(fx, fz);
     if (len > 0) {
       fx /= Math.max(1, len); fz /= Math.max(1, len);
-      const gy = groundFn(player.pos.x, player.pos.z);
+      // cast from just above the head so overhangs and stray collider shards overhead don't count as ground
+      const head = player.pos.y + 2.5, gy = groundFn(player.pos.x, player.pos.z, head);
       const depth = G.water - gy;
       let sp = (keys.ShiftLeft || keys.ShiftRight) ? (CFG.world?.run ?? 15) : (CFG.world?.walk ?? 9.5);
       if (depth > 1.3) sp *= 0.32; else if (depth > 0.25) sp *= 0.55;
       const s = Math.sin(player.yaw), c = Math.cos(player.yaw);
       const nx = player.pos.x + (fx * c + fz * s) * sp * dt, nz = player.pos.z + (-fx * s + fz * c) * sp * dt;
-      const ny = groundFn(nx, nz);
-      if (ny - gy < 2.2 * Math.max(dt * 10, 0.4) || ny < gy) { player.pos.x = nx; player.pos.z = nz; }
+      const ny = groundFn(nx, nz, head);
+      // a slope too steep blocks you, but never for long: after a moment you are let through so nobody gets trapped
+      if (ny - gy < 2.2 * Math.max(dt * 10, 0.4) || ny < gy || (G.stuckT = (G.stuckT || 0) + dt) > 0.6) { player.pos.x = nx; player.pos.z = nz; if (ny - gy < 1) G.stuckT = 0; }
       G.walkT = (G.walkT || 0) + dt * sp * 0.9; if (Math.floor(G.walkT / Math.PI) !== G.lastStep) { G.lastStep = Math.floor(G.walkT / Math.PI); step(); if (depth > 0.2) emit(new THREE.Vector3(player.pos.x, G.water + 0.05, player.pos.z), 0xcfe3f0, 6, 1.2, 1.2, 0.6); }
     }
     const lim = CFG.world?.bounds || [-140, 140, -160, 160];
     player.pos.x = THREE.MathUtils.clamp(player.pos.x, lim[0], lim[1]); player.pos.z = THREE.MathUtils.clamp(player.pos.z, lim[2], lim[3]);
   }
-  const gy = groundFn(player.pos.x, player.pos.z);
+  const gy = groundFn(player.pos.x, player.pos.z, Number.isFinite(player.pos.y) ? player.pos.y + 2.5 : undefined);
   player.pos.y = THREE.MathUtils.lerp(player.pos.y || gy, gy, Math.min(1, dt * 12));
   if (player.jv || player.jy) { player.jv = (player.jv || 0) - 22 * dt; player.jy = (player.jy || 0) + player.jv * dt; if (player.jy <= 0) { if (player.jv < -6) { step(); shake = 0.12; } player.jy = 0; player.jv = 0; } }
   const eye = Math.max(player.pos.y + 1.7, G.water + 0.6) + (player.jy || 0);
@@ -1117,7 +1119,7 @@ function update(dt) {
     s.mesh.material.opacity = (1 - s.mended * 0.85) * flick;
     s.glow.material.opacity = 0.18 * (1 - s.mended) * flick;
     if (s.rib) {
-      if (G.phase === 'cine' || G.phase === 'play') { if (s.delay > 0) s.delay -= dt; else if (s.open < 1) { const was = s.open; s.open = Math.min(1, s.open + dt * 0.6); if (was === 0) { noiseBurst(0.9, 2400, 200, 0.12, 'bandpass'); drum(0.2); } } }
+      if (G.phase === 'cine' || G.phase === 'play') { if (s.delay > 0) s.delay -= dt; else if (s.open < 1) { const was = s.open; s.open = Math.min(1, s.open + dt * 0.6); if (was === 0 && !(G.phase === 'cine' && introEl)) { noiseBurst(0.9, 2400, 200, 0.12, 'bandpass'); drum(0.2); } } }
       const tear = s.open, hot = s.el ? 0 : 1, m = Math.min(1, s.mended), bf = boltFlash || 0;
       const n1 = 0.75 + 0.25 * Math.sin(G.t * 23 + s.center.x) * Math.sin(G.t * 9.7 + s.center.y);
       s.rib.parts.forEach((pp, j) => {
@@ -1215,7 +1217,7 @@ function updateAmbience(dt) {
     if (boltT <= 0) { boltT = (6 + Math.random() * 6) * (0.8 + (G.chain?.length || 0) * 0.3); boltFlash = 1.4; flash(0xdfe6ff); spawnBolt(); if (Math.random() < 0.4) setTimeout(spawnBolt, 140); setTimeout(() => { flash(0xbfd0ff); boltFlash = 1; }, 120); const near = Math.random(); setTimeout(() => { if (CFG.assets?.thunder) { const L = [].concat(CFG.assets.thunder); const t = new Audio(L[Math.floor(Math.random() * L.length)]); t.volume = 0.45 + near * 0.55; t.play().catch(() => {}); } else thunderSfx(near); shake = Math.max(shake, 0.2); }, 150 + (1 - near) * 1600);
       const c = crackSegs[Math.floor(Math.random() * crackSegs.length)]; if (c && !c.mended) emit(c.center, 0xdfe8ff, 60, 6, 0, 1.2); }
   }
-  if ((G.phase === 'play' || G.phase === 'cine') && Math.random() < dt * 0.12 * (1 - (G.chain?.length || 0) / 5)) { shake = Math.max(shake, 0.35); drum(0.25); noiseBurst(1.5, 120, 50, 0.25, 'lowpass'); say('天又裂开一道口子…… · The sky cracks further…', 2200); }
+  if ((G.phase === 'play' || (G.phase === 'cine' && !introEl)) && Math.random() < dt * 0.12 * (1 - (G.chain?.length || 0) / 5)) { shake = Math.max(shake, 0.35); drum(0.25); noiseBurst(1.5, 120, 50, 0.25, 'lowpass'); say('天又裂开一道口子…… · The sky cracks further…', 2200); }
   boltFlash = Math.max(0, boltFlash - dt * 3); renderer.toneMappingExposure = 1.05 + boltFlash * 0.6;
   if (G.t % 0.15 < dt && (G.phase === 'play' || G.phase === 'cine')) emit(new THREE.Vector3(cx + (Math.random() - 0.5) * 30, cy + Math.random() * 6, cz + (Math.random() - 0.5) * 30), 0x8a8478, 2, 0.4, 0.2, 4);
 }
@@ -1330,7 +1332,7 @@ async function cinematic() {
   let skip = false; c.onclick = () => { skip = true; };
   for (const [t, en, ms] of lines) {
     if (skip) break; line.classList.remove('on'); await new Promise(r => setTimeout(r, 300)); line.innerHTML = ''; line.append(zhSpan(t), Object.assign(document.createElement('small'), { textContent: en })); line.classList.add('on');
-    stinger(); heartbeat(0.5);
+    if (!introEl) { stinger(); heartbeat(0.5); } // the recorded overture carries the drama on its own
     for (let k = 0; k < ms / 100 && !skip; k++) await new Promise(r => setTimeout(r, 100));
   }
   try { speechSynthesis.cancel(); } catch (_) {}
