@@ -372,7 +372,10 @@ async function setupHands() {
   m.position.sub(c); const k = (H.size || 0.42) / Math.max(sz.x, sz.y, sz.z);
   const wrapR = new THREE.Group(); wrapR.add(m); wrapR.scale.setScalar(k); if (H.rot) wrapR.rotation.set(...H.rot);
   hand.children.forEach(ch => { if (!ch.isLight) ch.visible = false; }); hand.rotation.set(0, 0, 0); hand.add(wrapR);
-  const wrapL = wrapR.clone(); wrapL.scale.x *= -1; handL.add(wrapL); handL.add(new THREE.PointLight(0xfff0d0, 0.5, 2)); G.realHands = true;
+  let wrapL;
+  const ml = CFG.assets.handL ? await loadGLB(CFG.assets.handL) : null;
+  if (ml) { const bl = new THREE.Box3().setFromObject(ml), sl = bl.getSize(new THREE.Vector3()); ml.position.sub(bl.getCenter(new THREE.Vector3())); wrapL = new THREE.Group(); wrapL.add(ml); wrapL.scale.setScalar((H.size || 0.42) / Math.max(sl.x, sl.y, sl.z)); if (H.rot) wrapL.rotation.set(...H.rot); }
+  else { wrapL = wrapR.clone(); wrapL.scale.x *= -1; } handL.add(wrapL); handL.add(new THREE.PointLight(0xfff0d0, 0.5, 2)); G.realHands = true;
 }
 async function setupProps() {
   setupHands();
