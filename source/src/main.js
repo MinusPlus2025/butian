@@ -80,7 +80,7 @@ const RESTORE_GLSL = /* glsl */`
   }
   vec3 col = gl_FragColor.rgb;
   float l = dot(col, vec3(0.299, 0.587, 0.114));
-  vec3 grey = vec3(pow(l, 1.15)) * vec3(0.86, 0.88, 0.91);
+  vec3 grey = mix(vec3(pow(l, 1.15)) * vec3(0.86, 0.88, 0.91), col, 0.5);
   gl_FragColor.rgb = mix(grey, col, clamp(m, 0.0, 1.0)) + rim;
 `;
 function patchMat(mat) {
@@ -251,7 +251,7 @@ async function buildSplatWorld(W) {
         vec3 c = ${inputs.gsplat}.rgba.rgb;
         float l = dot(c, vec3(0.299, 0.587, 0.114));
         vec3 vivid = clamp(vec3(l) + (c - vec3(l)) * 2.4, 0.0, 1.0) * 1.08;
-        vec3 grey = vec3(pow(l, 1.12)) * vec3(0.88, 0.9, 0.94);
+        vec3 grey = mix(vec3(pow(l, 1.12)) * vec3(0.88, 0.9, 0.94), c, ${(CFG.world?.stormColor ?? 0.5).toFixed(2)});
         vec3 outc = mix(grey, vivid, clamp(m, 0.0, 1.0));
         float op = ${inputs.gsplat}.rgba.a;
         for (int i = 0; i < 5; i++) {
@@ -352,6 +352,13 @@ function makeVillager(i) {
 
 // ---------- water ----------
 const waterMat = patchMat(new THREE.MeshStandardMaterial({ color: 0x3d6d86, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.82 }));
+// rolling flood: three wave trains displace the surface on the GPU; flat shading lets the light catch every crest
+const waterT = { value: 0 };
+waterMat.flatShading = true;
+{ const base = waterMat.onBeforeCompile; waterMat.onBeforeCompile = sh => { base(sh); sh.uniforms.uWT = waterT;
+  sh.vertexShader = 'uniform float uWT;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+    float wx = position.x, wz = position.z;
+    transformed.y += 0.16 * sin(wx * 0.45 + uWT * 1.3) + 0.11 * sin(wz * 0.7 - uWT * 1.9 + wx * 0.2) + 0.05 * sin((wx + wz) * 1.6 + uWT * 3.1);`); }; }
 const water = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600, 1, 1).rotateX(-Math.PI / 2), waterMat);
 scene.add(water);
 
@@ -489,7 +496,7 @@ async function setupProps() {
     if (W.start) START_POS.set(W.start[0], W.start[1]);
     if (W.water) Object.assign(G, W.water);
     sky.visible = false; scene.fog.near = 400; scene.fog.far = 2000;
-    water.geometry.dispose(); water.geometry = new THREE.CircleGeometry(W.waterRadius || 40, 48).rotateX(-Math.PI / 2);
+    water.geometry.dispose(); water.geometry = new THREE.PlaneGeometry((W.waterRadius || 40) * 2, (W.waterRadius || 40) * 2, 220, 220).rotateX(-Math.PI / 2);
     if (W.crack) crackSegs.forEach((c, i) => {
       c.mesh.visible = false; c.glow.visible = false; c.center.fromArray(W.crack[i]);
       const orb = new THREE.Mesh(new THREE.SphereGeometry(W.crack[i][3] * 0.5, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, fog: false }));
@@ -1192,6 +1199,7 @@ rain.frustumCulled = false; scene.add(rain);
 const rainSeed = Array.from({ length: RAIN_N }, () => [Math.random() * 40 - 20, Math.random() * 25, Math.random() * 40 - 20, 18 + Math.random() * 10]);
 let boltT = 4, boltFlash = 0;
 function updateAmbience(dt) {
+  waterT.value = G.t;
   updateBolts(dt);
   rainInit();
   const amt = G.phase === 'won' ? 0 : 1 - (G.chain?.length || 0) / 6; rain.material.opacity = 0.55 * amt; if (rainEl) rainEl.volume = Math.min(1, 0.7 * amt); if (rainHiss) rainHiss.gain.value = 0.3 * amt; if (!rainEl && !G.rainSynth && AC && amt > 0.05 && G.phase !== 'title') for (let k = 0; k < 2; k++) if (Math.random() < dt * 18 * amt) noiseBurst(0.03, 1500 + Math.random() * 3000, 800, 0.05 + Math.random() * 0.06, 'bandpass', Math.random() * 0.05); rain.visible = amt > 0.02;
