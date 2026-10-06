@@ -669,7 +669,7 @@ function interact(pick) {
   if (G.phase !== 'play') return;
   if (!G.carrying) {
     const o = pick || nearestOre();
-    if (o) { o.taken = true; o.beam.visible = false; o.light.visible = false; G.carrying = o; pluck(o.el.note, 1.2, 0.15); sfxPick(o.el.note); fovKick = 4; banner(`得 ${o.el.zh}`, `${o.el.en} ore`, '#' + new THREE.Color(o.el.color).getHexString()); if (G.tut < 1) { G.tut = 1; say(`第二步：拿到了${o.el.zh}。跟着金色光点跑回铜炉，对准炉口点击，把石头扔进去`, 6000); } else say(`拾起${o.el.name}（${o.el.zh}）· 带回炉中炼化`); pluck(o.el.note * 2, 0.8, 0.1, 0.12); return; }
+    if (o) { o.taken = true; o.beam.visible = false; o.light.visible = false; G.carrying = o; pluck(o.el.note, 1.2, 0.15); sfxPick(o.el.note); fovKick = 4; banner(`得 ${o.el.zh}`, `${o.el.en} ore`, '#' + new THREE.Color(o.el.color).getHexString()); if (G.tut < 1) { G.tut = 1; say(`第二步：带着${o.el.zh}回到铜炉，扔进去 · Bring it to the furnace and throw it in`, 6000); } else say(`拾起${o.el.name}（${o.el.zh}）· 带回炉中炼化`); pluck(o.el.note * 2, 0.8, 0.1, 0.12); return; }
   } else if (nearFurnace() && !G.forging) {
     const o = G.carrying; G.carrying = null; G.forging = 0.001; G.forgeEl = o;
     say(`炼石中…… ${o.el.zh}`); sfxForge(); fovKick = 6; return;
@@ -681,7 +681,7 @@ function forgeDone(o) {
     // wrong order: the stone shatters, the flood surges, the ore returns home
     G.mistakes++; G.water += 1.4; stinger(); setTimeout(() => narrate('石头碎了……洪水在咆哮。'), 400); sfxCrash(); shake = 0.9; fovKick = -8; banner('石 碎', 'Wrong order · the flood surges', '#ff7a6a'); emit(new THREE.Vector3(FURNACE_POS.x, G.furnace.y + 3, FURNACE_POS.y), 0x555555, 140, 7, 2, 1.4); flash(0x223344);
     const needEl = EL.find(e => e.key === need);
-    say(`${o.el.zh}不承${EL.find(e => e.key === G.chain[G.chain.length - 1]).zh}，石碎了。洪水上涨。需要：${needEl.zh}`, 4200);
+    say(`${o.el.zh}不承${EL.find(e => e.key === G.chain[G.chain.length - 1]).zh}，石碎了，洪水上涨。需要：${needEl.zh} · Wrong order! Need ${needEl.en}`, 4200);
     o.taken = false; o.stone.visible = true; o.stone.scale.setScalar(1); o.stone.position.copy(o.home); o.beam.visible = true; o.light.visible = true;
     return;
   }
@@ -694,7 +694,7 @@ function forgeDone(o) {
   G.water = Math.max(CFG.world?.water?.water ?? -2.6, G.water - (CFG.world?.water?.drop ?? 2.0)); G.rate *= 0.84;
   hudRing();
   const left = 5 - G.chain.length; if (left > 0) setTimeout(() => narrate(left === 1 ? '只剩最后一块了。' : `天补上了一角。还差${['','一','二','三','四'][left]}块。`, { pitch: 0.7 }), 3200);
-  if (G.tut < 2) { G.tut = 2; setTimeout(() => say(`补上了一块天，这片土地恢复了颜色。下一块必须是「${EL.find(e => e.key === NEXT[o.el.key]).zh}」（看屏幕上方）`, 7000), 2600); }
+  if (G.tut < 2) { G.tut = 2; setTimeout(() => say(`天补上一角，大地恢复了颜色。下一块：${EL.find(e => e.key === NEXT[o.el.key]).zh} · Next: ${EL.find(e => e.key === NEXT[o.el.key]).en}`, 7000), 2600); }
 }
 const flights = [];
 let shake = 0;
@@ -774,15 +774,15 @@ function update(dt) {
   updateParticles(dt); if (G.phase === 'play') musicTick(dt, fl);
   // hand: idle sway, walk bob, reach on click, hidden outside play
   hand.visible = G.phase === 'play'; handL.visible = hand.visible && !!G.realHands;
-  if (G.realHands) handL.position.set(-HAND_REST.x + rk * 0.04 - Math.sin(G.t * 1.1) * 0.006, HAND_REST.y + Math.abs(Math.sin((G.walkT || 0) + 1.5)) * -0.025 + (G.carrying ? 0.03 : -0.04), HAND_REST.z + 0.04);
   reachT = Math.max(0, reachT - dt);
   const rk = Math.sin(Math.min(1, (0.35 - reachT) / 0.35) * Math.PI) * (reachT > 0 ? 1 : 0);
   hand.position.set(HAND_REST.x - rk * 0.12 + Math.sin(G.t * 1.3) * 0.006, HAND_REST.y + rk * 0.12 + Math.abs(Math.sin(G.walkT || 0)) * -0.025 + (G.carrying ? 0.05 : 0), HAND_REST.z - rk * 0.35);
+  if (G.realHands) handL.position.set(-HAND_REST.x + rk * 0.04 - Math.sin(G.t * 1.1) * 0.006, HAND_REST.y + Math.abs(Math.sin((G.walkT || 0) + 1.5)) * -0.025 + (G.carrying ? 0.03 : -0.04), HAND_REST.z + 0.04);
   if (!G.realHands) hand.children.forEach(c => { if (c.userData.f) c.rotation.x = Math.PI / 2 - (G.carrying ? 1.1 : 0.35 + rk * 0.8); });
   for (let i = throws.length - 1; i >= 0; i--) {
     const th = throws[i]; th.t += dt / 0.7; const k = Math.min(1, th.t);
     th.o.stone.position.lerpVectors(th.from, th.to, k); th.o.stone.position.y += Math.sin(k * Math.PI) * 2.5; th.o.stone.scale.setScalar(THREE.MathUtils.lerp(0.16, 0.5, k)); th.o.stone.rotation.x += dt * 10;
-    if (k >= 1) { throws.splice(i, 1); th.o.stone.visible = false; emit(th.to, 0xffa040, 80, 5, 3, 1); shake = 0.25; G.forging = 0.001; G.forgeEl = th.o; say(`炼石中…… ${th.o.el.zh}`); sfxForge(); fovKick = 6; }
+    if (k >= 1) { throws.splice(i, 1); th.o.stone.visible = false; emit(th.to, 0xffa040, 80, 5, 3, 1); shake = 0.25; G.forging = 0.001; G.forgeEl = th.o; say(`炼石中…… ${th.o.el.zh} · Forging ${th.o.el.en}`); sfxForge(); fovKick = 6; }
   }
   // ores bob, carried stone follows
   for (const o of G.ores) {
@@ -942,7 +942,7 @@ function resetGame() {
   G.villagers.forEach(v => v.visible = false);
   player.pos.set(START_POS.x, groundFn(START_POS.x, START_POS.y), START_POS.y); player.yaw = 0; player.pitch = 0.12;
   $('end').hidden = true; $('lose').hidden = true; $('intro').hidden = true; $('hud').hidden = false;
-  G.n50 = G.n80 = 0; hudRing(); say('第一步：跟着地上的金色光点，跑到发光的原石旁，对准它点击鼠标，用手抓起来', 7000);
+  G.n50 = G.n80 = 0; hudRing(); say('第一步：跟着金色光点找到原石，点击抓起 · Follow the golden lights and grab an ore', 7000);
 }
 function startGame() { audioInit(); musicInit(); bgmPlay(); resetGame(); G.started = false; setTimeout(() => G.started = true, 400); }
 let seenIntro = false;
