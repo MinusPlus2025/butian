@@ -253,6 +253,9 @@ async function buildSplatWorld(W) {
         vec3 vivid = clamp(vec3(l) + (c - vec3(l)) * 2.4, 0.0, 1.0) * 1.08;
         vec3 grey = mix(vec3(pow(l, 1.12)) * vec3(0.88, 0.9, 0.94), c, ${(CFG.world?.stormColor ?? 0.5).toFixed(2)});
         vec3 outc = mix(grey, vivid, clamp(m, 0.0, 1.0));
+        // lightning lights the whole valley for a moment, peaks and cloud more than the valley floor
+        float fl = ${inputs.rb}.w;
+        outc += outc * fl * (0.18 + 0.32 * smoothstep(0.0, 30.0, p.y)) + vec3(0.015, 0.02, 0.035) * fl;
         float op = ${inputs.gsplat}.rgba.a;
         for (int i = 0; i < 5; i++) {
           if (mend[i] <= 0.0) continue;
@@ -275,7 +278,7 @@ async function buildSplatWorld(W) {
   splatMesh.__sync = () => {
     EL.forEach((e, i) => uRegD[i].value.copy(U.uReg.value[i]));
     const r = U.uRes.value; const cm = crackSegs.map(c => c.mended);
-    uResD.value.set(r[0], r[1], r[2], r[3]); uRes5.value.set(r[4], U.uAll.value, cm[4], 0); uMend.value.set(cm[0], cm[1], cm[2], cm[3]);
+    uResD.value.set(r[0], r[1], r[2], r[3]); uRes5.value.set(r[4], U.uAll.value, cm[4], Math.min(1.4, boltFlash)); uMend.value.set(cm[0], cm[1], cm[2], cm[3]);
     splatMesh.updateVersion();
   };
   await splatMesh.initialized; loadWorldB();
@@ -363,7 +366,7 @@ waterMat.flatShading = true;
     float chop = 0.12 * sin(wx * 0.45 + uWT * 1.3) + 0.05 * sin((wx + wz) * 1.6 + uWT * 3.1);
     transformed.y += surge + chop; vCrest = surge + chop;`);
   sh.fragmentShader = 'varying float vCrest;\n' + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.82, 0.74), smoothstep(0.2, 0.36, vCrest) * 0.8);`); }; }
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.82, 0.74), smoothstep(0.24, 0.4, vCrest) * 0.5);`); }; }
 const water = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600, 1, 1).rotateX(-Math.PI / 2), waterMat);
 scene.add(water);
 
@@ -518,16 +521,16 @@ function spawnBolt() {
   const start = c.center.clone().add(new THREE.Vector3((Math.random() - 0.5) * 8 * S, 0, 0));
   const end = new THREE.Vector3(start.x + (Math.random() - 0.5) * 30 * S, 4, start.z + 10 + Math.random() * 20);
   const path = (a, b, n, amp) => { const out = []; for (let i = 0; i <= n; i++) { const t = i / n; out.push(new THREE.Vector3(a.x + (b.x - a.x) * t + (i && i < n ? (Math.random() - 0.5) * amp : 0), a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t)); } return out; };
-  const main = path(start, end, 18, 4 * S), grp = new THREE.Group(), mats = [];
-  const add = (pts, w) => { const glow = ribbon(pts, w * 7, 0x9fb8ff, 0.7, THREE.AdditiveBlending, 1000), core = ribbon(pts, w, 0xffffff, 1, THREE.NormalBlending, 1001); grp.add(glow, core); mats.push(glow, core); };
-  add(main, 0.5 * S);
-  for (let k = 0; k < 3; k++) { const i = 3 + Math.floor(Math.random() * 10), from = main[i]; const to = from.clone().add(new THREE.Vector3((Math.random() - 0.5) * 14 * S, -(4 + Math.random() * 10) * S, (Math.random() - 0.5) * 4)); add(path(from, to, 7, 2 * S), 0.22 * S); }
+  const main = path(start, end, 30, 3 * S), grp = new THREE.Group(), mats = [];
+  const add = (pts, w) => { const glow = ribbon(pts, w * 3.5, 0x9fb8ff, 0.45, THREE.AdditiveBlending, 1000), core = ribbon(pts, w, 0xffffff, 1, THREE.NormalBlending, 1001); grp.add(glow, core); mats.push(glow, core); };
+  add(main, 0.28 * S);
+  for (let k = 0; k < 3; k++) { const i = 4 + Math.floor(Math.random() * 18), from = main[i]; const to = from.clone().add(new THREE.Vector3((Math.random() - 0.5) * 14 * S, -(4 + Math.random() * 10) * S, (Math.random() - 0.5) * 4)); add(path(from, to, 12, 1.6 * S), 0.12 * S); }
   scene.add(grp); bolts.push({ grp, mats, t: 0 });
 }
 function updateBolts(dt) {
   for (let i = bolts.length - 1; i >= 0; i--) {
     const b = bolts[i]; b.t += dt; const on = b.t < 0.07 || (b.t > 0.12 && b.t < 0.2) || (b.t > 0.26 && b.t < 0.3);
-    b.mats.forEach((m, j) => { m.material.opacity = on ? (j % 2 ? 1 : 0.7) : (j % 2 ? 0.15 : 0.05); });
+    b.mats.forEach((m, j) => { m.material.opacity = on ? (j % 2 ? 1 : 0.4) : (j % 2 ? 0.15 : 0.05); });
     if (b.t > 0.45) { scene.remove(b.grp); b.mats.forEach(m => { m.geometry.dispose(); m.material.dispose(); }); bolts.splice(i, 1); }
   }
 }
@@ -540,6 +543,7 @@ function buildSkyCrack() {
     const add = (pts, wc, wg) => { const dark = ribbon(pts, wc * 3.2, 0x1a0603, 0.85, THREE.NormalBlending, 997), glow = ribbon(pts, wg, 0xff4a20, 0.55, THREE.AdditiveBlending, 998), core = ribbon(pts, wc, 0xffe2b0, 0.95, THREE.NormalBlending, 999); grp.add(dark, glow, core); parts.push({ dark, glow, core }); };
     add(main, 0.7 * S, 6 * S);
     for (let k = 0; k < 3; k++) { const from = main[2 + Math.floor(Math.random() * (main.length - 4))]; const dir = new THREE.Vector3((Math.random() - 0.5) * 6 * S, (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 4) * S, 0); add(jag(from, from.clone().add(dir), 5, 0.6 * S), 0.3 * S, 2.2 * S); }
+    if (CFG.world?.crackRibbon !== 'full') grp.visible = false; // the world's own baked crack is the crack; flat glow strips on top only looked pasted on
     scene.add(grp); s.rib = { grp, parts }; s.open = 0; s.delay = i * 0.9;
   });
 }
@@ -1201,7 +1205,7 @@ function update(dt) {
         pp.core.geometry.setDrawRange(0, Math.max(0, show)); pp.glow.geometry.setDrawRange(0, Math.max(0, show)); pp.dark.geometry.setDrawRange(0, Math.max(0, show)); pp.dark.material.opacity = hot ? 0.85 : THREE.MathUtils.lerp(0.85, 0, m);
         if (s.el) { pp.core.material.color.lerpColors(new THREE.Color(0xffe2b0), new THREE.Color(s.el.color), m); pp.glow.material.color.set(s.el.color); }
         pp.core.material.opacity = hot ? (0.85 * n1 + bf * 0.3) : THREE.MathUtils.lerp(0.95, G.phase === 'won' ? 0.25 : 0.4, m);
-        pp.glow.material.opacity = hot ? (0.45 + 0.25 * Math.sin(G.t * 2.2 + j + s.center.x) + bf * 0.5) : THREE.MathUtils.lerp(0.8, 0.12, m);
+        pp.glow.material.opacity = (hot ? (0.45 + 0.25 * Math.sin(G.t * 2.2 + j + s.center.x) + bf * 0.5) : THREE.MathUtils.lerp(0.8, 0.12, m)) * (pp.core.visible ? 1 : 0.45);
       });
       if (!s.el && tear >= 1 && Math.random() < dt * 0.4) { s.open = 0.75; } // the crack keeps ripping open again
     }
@@ -1291,11 +1295,11 @@ function updateAmbience(dt) {
   rainGeo.attributes.position.needsUpdate = true;
   if (G.phase === 'play' || G.phase === 'cine') {
     boltT -= dt;
-    if (boltT <= 0) { boltT = (6 + Math.random() * 6) * (0.8 + (G.chain?.length || 0) * 0.3); boltFlash = 1.4; flash(0xdfe6ff); spawnBolt(); if (Math.random() < 0.4) setTimeout(spawnBolt, 140); setTimeout(() => { flash(0xbfd0ff); boltFlash = 1; }, 120); const near = Math.random(); setTimeout(() => { if (CFG.assets?.thunder) { const L = [].concat(CFG.assets.thunder); const t = new Audio(L[Math.floor(Math.random() * L.length)]); t.volume = 0.45 + near * 0.55; t.play().catch(() => {}); } else thunderSfx(near); shake = Math.max(shake, 0.2); }, 150 + (1 - near) * 1600);
+    if (boltT <= 0) { boltT = (6 + Math.random() * 6) * (0.8 + (G.chain?.length || 0) * 0.3); boltFlash = 1.4; spawnBolt(); if (Math.random() < 0.4) setTimeout(spawnBolt, 140); setTimeout(() => { boltFlash = 1; }, 120); const near = Math.random(); setTimeout(() => { if (CFG.assets?.thunder) { const L = [].concat(CFG.assets.thunder); const t = new Audio(L[Math.floor(Math.random() * L.length)]); t.volume = 0.45 + near * 0.55; t.play().catch(() => {}); } else thunderSfx(near); shake = Math.max(shake, 0.2); }, 150 + (1 - near) * 1600);
       const c = crackSegs[Math.floor(Math.random() * crackSegs.length)]; if (c && !c.mended) emit(c.center, 0xdfe8ff, 60, 6, 0, 1.2); }
   }
   if ((G.phase === 'play' || (G.phase === 'cine' && !introEl)) && Math.random() < dt * 0.12 * (1 - (G.chain?.length || 0) / 5)) { shake = Math.max(shake, 0.35); drum(0.25); noiseBurst(1.5, 120, 50, 0.25, 'lowpass'); say('天又裂开一道口子…… · The sky cracks further…', 2200); }
-  boltFlash = Math.max(0, boltFlash - dt * 3); renderer.toneMappingExposure = 1.05 + boltFlash * 0.6;
+  boltFlash = Math.max(0, boltFlash - dt * 3); renderer.toneMappingExposure = 1.05 + boltFlash * 0.25;
   if (G.t % 0.15 < dt && (G.phase === 'play' || G.phase === 'cine')) emit(new THREE.Vector3(cx + (Math.random() - 0.5) * 30, cy + Math.random() * 6, cz + (Math.random() - 0.5) * 30), 0x8a8478, 2, 0.4, 0.2, 4);
 }
 const rainbow = new THREE.Group(); rainbow.visible = false;
@@ -1441,4 +1445,4 @@ addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; cam
 })();
 
 // test / recording hooks
-window.__butian = { quake, pick: (nx, ny) => { const r = new THREE.Raycaster(); r.setFromCamera(new THREE.Vector2(nx, ny), camera); return [camera.position.toArray().map(v => +v.toFixed(1)), ...r.intersectObjects(groundMeshes, false).slice(0, 3).map(h => h.point.toArray().map(v => +v.toFixed(1)))]; }, NEXT, AV, wb: () => worldB && { vis: worldB.visible, ready: !!worldB.isInitialized || true }, crackSegs, hand, handL, FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };
+window.__butian = { bolt: () => { boltT = 0; }, quake, pick: (nx, ny) => { const r = new THREE.Raycaster(); r.setFromCamera(new THREE.Vector2(nx, ny), camera); return [camera.position.toArray().map(v => +v.toFixed(1)), ...r.intersectObjects(groundMeshes, false).slice(0, 3).map(h => h.point.toArray().map(v => +v.toFixed(1)))]; }, NEXT, AV, wb: () => worldB && { vis: worldB.visible, ready: !!worldB.isInitialized || true }, crackSegs, hand, handL, FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };
