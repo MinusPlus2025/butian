@@ -7,4 +7,10 @@ for k in ['wood','fire','earth','metal','water','furnace','hand']:
     if os.path.exists(p): shutil.copy(p,'pages/assets/'); a[k]='assets/'+os.path.basename(p)
 for f in ['world.spz','collider.glb']: shutil.copy('dist/assets/'+f,'pages/assets/')
 if os.path.exists('dist/assets/bgm.mp3'): shutil.copy('dist/assets/bgm.mp3','pages/assets/'); a['bgm']='assets/bgm.mp3'
+if os.path.exists('dist/assets/hand_left.glb'): shutil.copy('dist/assets/hand_left.glb','pages/assets/'); a['handL']='assets/hand_left.glb'
+if os.path.exists('dist/assets/rain.mp3'): shutil.copy('dist/assets/rain.mp3','pages/assets/'); a['rain']='assets/rain.mp3'
+import glob
+th=sorted(glob.glob('dist/assets/thunder*.mp3'))
+for f in th: shutil.copy(f,'pages/assets/')
+if th: a['thunder']=['assets/'+os.path.basename(f) for f in th]
 json.dump({'assets':a,'world':w},open('config_pages.json','w'))

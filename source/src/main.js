@@ -986,7 +986,7 @@ function updateAmbience(dt) {
   rainGeo.attributes.position.needsUpdate = true;
   if (G.phase === 'play' || G.phase === 'cine') {
     boltT -= dt;
-    if (boltT <= 0) { boltT = (3 + Math.random() * 5) * (0.6 + (G.chain?.length || 0) * 0.3); boltFlash = 1.4; flash(0xdfe6ff); setTimeout(() => { flash(0xbfd0ff); boltFlash = 1; }, 120); const near = Math.random(); setTimeout(() => { if (CFG.assets?.thunder) { const t = new Audio(CFG.assets.thunder); t.volume = 0.9; t.play().catch(() => {}); } else thunderSfx(near); shake = Math.max(shake, 0.2); }, 150 + (1 - near) * 1600);
+    if (boltT <= 0) { boltT = (6 + Math.random() * 6) * (0.8 + (G.chain?.length || 0) * 0.3); boltFlash = 1.4; flash(0xdfe6ff); setTimeout(() => { flash(0xbfd0ff); boltFlash = 1; }, 120); const near = Math.random(); setTimeout(() => { if (CFG.assets?.thunder) { const L = [].concat(CFG.assets.thunder); const t = new Audio(L[Math.floor(Math.random() * L.length)]); t.volume = 0.45 + near * 0.55; t.play().catch(() => {}); } else thunderSfx(near); shake = Math.max(shake, 0.2); }, 150 + (1 - near) * 1600);
       const c = crackSegs[Math.floor(Math.random() * crackSegs.length)]; if (c && !c.mended) emit(c.center, 0xdfe8ff, 60, 6, 0, 1.2); }
   }
   if ((G.phase === 'play' || G.phase === 'cine') && Math.random() < dt * 0.12 * (1 - (G.chain?.length || 0) / 5)) { shake = Math.max(shake, 0.35); drum(0.25); noiseBurst(1.5, 120, 50, 0.25, 'lowpass'); say('天又裂开一道口子…… · The sky cracks further…', 2200); }
