@@ -141,12 +141,14 @@ button.big.ghost { background: rgba(20,14,10,.55); color: var(--paper); box-shad
 @keyframes stamp { 0% { opacity: 0; transform: scale(2.6) rotate(-14deg); } 35% { opacity: 1; transform: scale(.92) rotate(-5deg); } 55% { transform: scale(1.03) rotate(-5deg); } 100% { opacity: .96; transform: scale(1) rotate(-5deg); } }
 @keyframes fadein { to { opacity: 1; } }
 body[data-lang="zh"] #giftseal small { display: none; }
+#drown { position: fixed; inset: 0; z-index: 3; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at 50% 30%, rgba(60,110,130,.55), rgba(8,28,40,.95)); transition: opacity .25s; }
 </style>
 
 <canvas id="c"></canvas>
 <div id="flash"></div>
 <div id="cine" hidden><div id="cine-line"></div><div class="skip"><span class="zh-t">点击跳过 · </span><span class="en-t">click to skip</span></div></div>
 <div id="sub"></div>
+<div id="drown"></div>
 <div id="giftseal" hidden><div class="bigseal">礼</div><p><span class="zh-t">这个世界，是女娲留给人间的礼物</span><small class="en-t">This world is Nüwa's gift to us</small></p></div>
 <div id="banner"><b></b><i></i></div>
 <div id="guide" hidden><svg id="guide-arrow" style="display:none" viewBox="0 0 48 48" width="44" height="44"><defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6c8"/><stop offset="1" stop-color="#f0a020"/></linearGradient></defs><path d="M24 3 L44 40 L24 31 L4 40 Z" fill="url(#ga)" stroke="#5a2e00" stroke-width="2.5" stroke-linejoin="round"/></svg><div id="guide-text"></div></div>
