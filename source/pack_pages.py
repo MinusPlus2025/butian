@@ -17,3 +17,8 @@ json.dump({'assets':a,'world':w},open('config_pages.json','w'))
 for k,f in [('nuwa','nuwa.glb'),('forge','forge.mp3'),('dragon','dragon.mp3'),('ending','ending.mp3'),('intro','intro.mp3')]:
     if os.path.exists('dist/assets/'+f): shutil.copy('dist/assets/'+f,'pages/assets/'); a[k]='assets/'+f
 json.dump({'assets':a,'world':w},open('config_pages.json','w'))
+if os.path.isdir('dist/assets/voice'):
+    os.makedirs('pages/assets/voice',exist_ok=True)
+    for f in os.listdir('dist/assets/voice'): shutil.copy('dist/assets/voice/'+f,'pages/assets/voice/')
+    a['voice']='assets/voice/'
+json.dump({'assets':a,'world':w},open('config_pages.json','w'))

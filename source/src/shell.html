@@ -19,10 +19,7 @@
 }
 html, body { height: 100%; margin: 0; background: var(--ink); color: var(--paper); overflow: hidden; font-family: var(--serif); }
 #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-#end { opacity: 0; transition: opacity 2.6s ease; }
-#end .card { transform: translateY(14px); transition: transform 2.6s ease; }
-#end.show { opacity: 1; }
-#end.show .card { transform: none; }
+#end .source { font-size: .78rem; opacity: .72; line-height: 1.6; max-width: 34em; margin: .2rem 0 .8rem; }
 .overlay { position: fixed; inset: 0; display: grid; place-items: center; overflow-y: auto; padding: 16px; background: var(--veil); backdrop-filter: blur(2px); z-index: 10; }
 .card { max-width: 34rem; width: 100%; display: grid; gap: 1rem; text-align: left; }
 .title { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
@@ -192,6 +189,7 @@ body[data-lang="zh"] #giftseal small { display: none; }
     <div class="title"><h1>天成</h1><span class="en">The sky is whole</span></div>
     <p class="story zh-t">洪水退去，颜色回到山河，百姓重生。<br>女娲耗尽了力量，身归天地。</p>
     <p class="story-en en-t">The flood recedes, colour returns and the people live again. Her strength spent, Nüwa gives herself back to heaven and earth.</p>
+    <p class="source"><span class="zh-t">故事据《淮南子·天文训》《淮南子·览冥训》改编。五行相生的补天顺序和「女娲身归天地」是游戏的艺术处理，不出自原典。</span><span class="en-t">Adapted from the Huainanzi (chapters "Tianwen" and "Lanming"). The Five Phases order of mending and Nüwa giving herself back to the world are the game's own artistic choices, not part of the source text.</span></p>
     <div class="end-stats">
       <div><span><span class="zh-t">用时 </span><span class="en-t">TIME</span></span><span id="end-time">0:00</span></div>
       <div><span><span class="zh-t">碎石 </span><span class="en-t">SHATTERED</span></span><span id="end-miss">0</span></div>
@@ -205,7 +203,7 @@ body[data-lang="zh"] #giftseal small { display: none; }
   <div class="card">
     <div class="title"><h1>水没</h1><span class="en">The flood took the valley</span></div>
     <p class="story zh-t">你补上了 <b id="lose-n">0</b> 块。洪水先到了。想想从哪一块开始，路会更短。</p>
-    <p class="story-en en-t">You sealed <b id="lose-n-en">0</b>. The flood came first. Think about which stone to start with. The low ground floods first.</p>
+    <p class="story-en en-t">You sealed <b id="lose-n-en">0</b>. The flood came first. Think about which stone to start with.</p>
     <button class="big" id="retry"><span class="zh-t">再 试 · </span><span class="en-t">Try again</span></button>
   </div>
 </div>
