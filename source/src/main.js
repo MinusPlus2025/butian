@@ -373,7 +373,7 @@ async function setupHands() {
   const wrapR = new THREE.Group(); wrapR.add(m); wrapR.scale.setScalar(k); if (H.rot) wrapR.rotation.set(...H.rot);
   hand.children.forEach(ch => { if (!ch.isLight) ch.visible = false; }); hand.rotation.set(0, 0, 0); hand.add(wrapR);
   let wrapL;
-  const ml = CFG.assets.handL ? await loadGLB(CFG.assets.handL) : null;
+  const ml = null;
   if (ml) { const bl = new THREE.Box3().setFromObject(ml), sl = bl.getSize(new THREE.Vector3()); ml.position.sub(bl.getCenter(new THREE.Vector3())); wrapL = new THREE.Group(); wrapL.add(ml); wrapL.scale.setScalar((H.size || 0.42) / Math.max(sl.x, sl.y, sl.z)); if (H.rot) wrapL.rotation.set(...H.rot); }
   else { wrapL = wrapR.clone(); wrapL.scale.x *= -1; } handL.add(wrapL); handL.add(new THREE.PointLight(0xfff0d0, 0.5, 2)); G.realHands = true;
 }
@@ -483,7 +483,7 @@ function audioInit() {
   s2.connect(f2).connect(floodGain).connect(AC.destination); s2.start();
 }
 let floodGain = null, rainHiss = null;
-function rainInit() { if (!AC || rainHiss) return; const n = AC.sampleRate * 2, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; const src = AC.createBufferSource(); src.buffer = b; src.loop = true; const hp = AC.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 2500; hp.Q.value = 0.4; rainHiss = AC.createGain(); rainHiss.gain.value = 0.2; src.connect(hp).connect(rainHiss).connect(AC.destination); src.start(); }
+function rainInit() { if (!AC || rainHiss) return; const n = AC.sampleRate * 2, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; const src = AC.createBufferSource(); src.buffer = b; src.loop = true; let last = 0; for (let i = 0; i < n; i++) { last = 0.97 * last + 0.03 * d[i]; d[i] = last * 6; } const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 400; const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3500; rainHiss = AC.createGain(); rainHiss.gain.value = 0.15; src.connect(hp).connect(lp).connect(rainHiss).connect(AC.destination); src.start(); }
 function pluck(freq, dur = 2.2, vol = 0.22, delay = 0) {
   if (!AC) return; const t0 = AC.currentTime + delay;
   [1, 2, 3.01].forEach((h, k) => {
@@ -875,7 +875,7 @@ const rainSeed = Array.from({ length: RAIN_N }, () => [Math.random() * 40 - 20, 
 let boltT = 4, boltFlash = 0;
 function updateAmbience(dt) {
   rainInit();
-  const amt = G.phase === 'won' ? 0 : 1 - (G.chain?.length || 0) / 6; rain.material.opacity = 0.55 * amt; if (rainHiss) rainHiss.gain.value = 0.22 * amt; rain.visible = amt > 0.02;
+  const amt = G.phase === 'won' ? 0 : 1 - (G.chain?.length || 0) / 6; rain.material.opacity = 0.55 * amt; if (rainHiss) rainHiss.gain.value = 0.16 * amt; if (AC && amt > 0.05 && G.phase !== 'title') for (let k = 0; k < 2; k++) if (Math.random() < dt * 18 * amt) noiseBurst(0.03, 1500 + Math.random() * 3000, 800, 0.05 + Math.random() * 0.06, 'bandpass', Math.random() * 0.05); rain.visible = amt > 0.02;
   const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
   for (let i = 0; i < RAIN_N; i++) {
     const r = rainSeed[i]; r[1] -= r[3] * dt; if (r[1] < -4) { r[1] = 20 + Math.random() * 5; r[0] = Math.random() * 40 - 20; r[2] = Math.random() * 40 - 20; }
@@ -1030,4 +1030,4 @@ addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; cam
 })();
 
 // test / recording hooks
-window.__butian = { FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };
+window.__butian = { hand, handL, FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };
