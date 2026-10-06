@@ -1440,6 +1440,7 @@ const rainbow = new THREE.Group(); rainbow.visible = false;
 rainbow.position.set(START_POS.x, 0, START_POS.y - 70); scene.add(rainbow);
 const sunLight = new THREE.DirectionalLight(0xffe6b0, 0); sunLight.position.set(30, 80, 20); scene.add(sunLight);
 const DEMO = /[?&]demo/.test(location.search);
+if (DEMO) document.body.classList.add('demo'); // recording mode: no key help, no cursor
 const AP = { stuckT: 0, last: null, wait: 0, wrongDone: false };
 function autopilot(dt) {
   keys.KeyW = false; keys.ShiftLeft = false;
