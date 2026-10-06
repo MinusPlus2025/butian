@@ -405,10 +405,10 @@ async function setupProps() {
   }
   const f = await makeFurnace();
   const fy = groundFn(FURNACE_POS.x, FURNACE_POS.y);
-  f.position.set(FURNACE_POS.x, fy, FURNACE_POS.y); scene.add(f);
+  f.position.set(FURNACE_POS.x, fy, FURNACE_POS.y); f.rotation.y = CFG.world?.furnaceRot ?? Math.PI / 2; scene.add(f);
   const fire = new THREE.PointLight(0xff8a3c, 60, 22); fire.position.set(FURNACE_POS.x, fy + 3.2, FURNACE_POS.y); scene.add(fire);
-  const ember = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffa040 }));
-  ember.position.set(FURNACE_POS.x, fy + 2.9, FURNACE_POS.y); scene.add(ember);
+  const ember = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 10), new THREE.MeshBasicMaterial({ color: 0xff7a20, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false })); ember.scale.y = 0.35;
+  ember.position.set(FURNACE_POS.x, fy + (CFG.world?.furnaceSize ?? 3) * 0.78, FURNACE_POS.y); scene.add(ember);
   G.furnace = { obj: f, fire, ember, y: fy };
   if (!W || W.failLevel == null) G.failLevel = fy + 0.6;
   for (let i = 0; i < 14; i++) {
@@ -482,7 +482,8 @@ function audioInit() {
   floodGain = AC.createGain(); floodGain.gain.value = 0;
   s2.connect(f2).connect(floodGain).connect(AC.destination); s2.start();
 }
-let floodGain = null;
+let floodGain = null, rainHiss = null;
+function rainInit() { if (!AC || rainHiss) return; const n = AC.sampleRate * 2, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; const src = AC.createBufferSource(); src.buffer = b; src.loop = true; const hp = AC.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 2500; hp.Q.value = 0.4; rainHiss = AC.createGain(); rainHiss.gain.value = 0.2; src.connect(hp).connect(rainHiss).connect(AC.destination); src.start(); }
 function pluck(freq, dur = 2.2, vol = 0.22, delay = 0) {
   if (!AC) return; const t0 = AC.currentTime + delay;
   [1, 2, 3.01].forEach((h, k) => {
@@ -636,7 +637,7 @@ const hand = new THREE.Group();
   hand.rotation.set(0.25, 0.15, 0.1);
   camera.add(hand);
 }
-const HAND_REST = new THREE.Vector3(0.3, -0.32, -0.6);
+const HAND_REST = new THREE.Vector3(0.28, -0.2, -0.5);
 let reachT = 0;
 function aimAt(target, maxD) {
   const d = tmpA.copy(target).sub(camera.position); const dist = d.length(); if (dist > maxD) return false;
@@ -824,11 +825,23 @@ function update(dt) {
     if (s.el) { s.mesh.material.color.lerpColors(new THREE.Color(0xfff6e0), new THREE.Color(s.el.color), s.mended); }
     s.mesh.material.opacity = (1 - s.mended * 0.85) * flick;
     s.glow.material.opacity = 0.18 * (1 - s.mended) * flick;
+    if (s.orb && !s.el && (G.phase === 'play' || G.phase === 'cine')) {
+      const pul = 0.5 + 0.5 * Math.sin(G.t * 3.1 + s.center.x) * Math.sin(G.t * 7.3 + s.center.z);
+      s.orb.material.color.setRGB(1, 0.35 + pul * 0.5, 0.25 + pul * 0.3); s.orb.material.blending = THREE.AdditiveBlending; s.orb.material.opacity = 0.25 + pul * 0.45; s.orb.scale.set(1.6 + pul * 0.5, 0.35 + pul * 0.15, 1.6 + pul * 0.5);
+      if (Math.random() < dt * 2.5) emit(s.center.clone().add(new THREE.Vector3((Math.random() - 0.5) * 6, -1, (Math.random() - 0.5) * 3)), Math.random() < 0.5 ? 0xff7a3a : 0x777777, 6, 1.5, -6, 2.5);
+    } else if (s.orb && !s.el) s.orb.material.opacity = 0;
     if (s.orb && s.el) { s.orb.material.color.set(s.el.color); s.orb.material.opacity = Math.sin(Math.min(1, s.mended) * Math.PI) * 0.9; s.orb.scale.setScalar(0.4 + s.mended * 1.6); }
   });
   G.restoreAnim.forEach((r, i) => { if (r > 0 && r < 1) G.restoreAnim[i] = Math.min(1, r + dt / 3.5); U.uRes.value[i] = easeOut(G.restoreAnim[i]); });
   const prog = G.restoreAnim.reduce((a, b) => a + b, 0) / 5;
-  if (G.phase === 'won') U.uAll.value = Math.min(1, U.uAll.value + dt / 4);
+  if (G.phase === 'won') {
+    U.uAll.value = Math.min(1, U.uAll.value + dt / 4);
+    renderer.toneMappingExposure = THREE.MathUtils.lerp(renderer.toneMappingExposure, 1.45, dt * 0.6);
+    rainbow.visible = true; rainbow.material.opacity = Math.min(0.55, rainbow.material.opacity + dt * 0.12);
+    sunLight.intensity = Math.min(3, sunLight.intensity + dt);
+    if (Math.random() < dt * 25) emit(new THREE.Vector3(camera.position.x + (Math.random() - 0.5) * 40, camera.position.y + 10 + Math.random() * 8, camera.position.z + (Math.random() - 0.5) * 40), [0xffc0d0, 0xffe08a, 0xffffff][Math.floor(Math.random() * 3)], 1, 0.6, -1.2, 7);
+    if (Math.random() < dt * 0.8) bell(PENTA[5 + Math.floor(Math.random() * 5)] * 2, 2, 0.05);
+  } else if (rainbow.visible) { rainbow.visible = false; rainbow.material.opacity = 0; sunLight.intensity = 0; }
   skyMat.uniforms.uSat.value = Math.max(prog * 0.75, U.uAll.value);
   scene.fog.color.lerpColors(new THREE.Color(0xb9bcc0), new THREE.Color(0xf1d9bc), skyMat.uniforms.uSat.value);
   if (splatMesh && splatMesh.__sync) splatMesh.__sync();
@@ -853,30 +866,37 @@ function update(dt) {
   }
 }
 // ---------- ambience: rain, drifting ash, lightning ----------
-const RAIN_N = 1400;
+const RAIN_N = 3200;
 const rainGeo = new THREE.BufferGeometry(); const rainPos = new Float32Array(RAIN_N * 6);
 rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
-const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0xaab4c0, transparent: true, opacity: 0.35, depthWrite: false, fog: false }));
+const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0xaab4c0, transparent: true, opacity: 0.55, depthWrite: false, fog: false }));
 rain.frustumCulled = false; scene.add(rain);
 const rainSeed = Array.from({ length: RAIN_N }, () => [Math.random() * 40 - 20, Math.random() * 25, Math.random() * 40 - 20, 18 + Math.random() * 10]);
 let boltT = 4, boltFlash = 0;
 function updateAmbience(dt) {
-  const amt = G.phase === 'won' ? 0 : 1 - (G.chain?.length || 0) / 6; rain.material.opacity = 0.35 * amt; rain.visible = amt > 0.02;
+  rainInit();
+  const amt = G.phase === 'won' ? 0 : 1 - (G.chain?.length || 0) / 6; rain.material.opacity = 0.55 * amt; if (rainHiss) rainHiss.gain.value = 0.22 * amt; rain.visible = amt > 0.02;
   const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
   for (let i = 0; i < RAIN_N; i++) {
     const r = rainSeed[i]; r[1] -= r[3] * dt; if (r[1] < -4) { r[1] = 20 + Math.random() * 5; r[0] = Math.random() * 40 - 20; r[2] = Math.random() * 40 - 20; }
     const x = cx + r[0] + r[1] * 0.12, y = cy + r[1] - 6, z = cz + r[2]; const o = i * 6;
-    rainPos[o] = x; rainPos[o + 1] = y; rainPos[o + 2] = z; rainPos[o + 3] = x - 0.08; rainPos[o + 4] = y - 0.7; rainPos[o + 5] = z;
+    rainPos[o] = x; rainPos[o + 1] = y; rainPos[o + 2] = z; rainPos[o + 3] = x - 0.08; rainPos[o + 4] = y - 1.1; rainPos[o + 5] = z;
   }
   rainGeo.attributes.position.needsUpdate = true;
   if (G.phase === 'play' || G.phase === 'cine') {
     boltT -= dt;
-    if (boltT <= 0) { boltT = (6 + Math.random() * 8) * (0.6 + (G.chain?.length || 0) * 0.25); boltFlash = 1; flash(0x9fb4ff); setTimeout(() => { drum(0.35); noiseBurst(2.2, 300, 60, 0.25, 'lowpass'); }, 300 + Math.random() * 700);
+    if (boltT <= 0) { boltT = (3 + Math.random() * 5) * (0.6 + (G.chain?.length || 0) * 0.3); boltFlash = 1.4; flash(0xdfe6ff); setTimeout(() => { flash(0xbfd0ff); boltFlash = 1; }, 120); setTimeout(() => { noiseBurst(0.35, 3000, 500, 0.5); drum(0.6); noiseBurst(3.5, 400, 40, 0.55, 'lowpass', 0.1); shake = Math.max(shake, 0.2); }, 250 + Math.random() * 600);
       const c = crackSegs[Math.floor(Math.random() * crackSegs.length)]; if (c && !c.mended) emit(c.center, 0xdfe8ff, 60, 6, 0, 1.2); }
   }
+  if ((G.phase === 'play' || G.phase === 'cine') && Math.random() < dt * 0.12 * (1 - (G.chain?.length || 0) / 5)) { shake = Math.max(shake, 0.35); drum(0.25); noiseBurst(1.5, 120, 50, 0.25, 'lowpass'); say('天又裂开一道口子…… · The sky cracks further…', 2200); }
   boltFlash = Math.max(0, boltFlash - dt * 3); renderer.toneMappingExposure = 1.05 + boltFlash * 0.6;
   if (G.t % 0.15 < dt && (G.phase === 'play' || G.phase === 'cine')) emit(new THREE.Vector3(cx + (Math.random() - 0.5) * 30, cy + Math.random() * 6, cz + (Math.random() - 0.5) * 30), 0x8a8478, 2, 0.4, 0.2, 4);
 }
+const rainbow = new THREE.Group(); rainbow.visible = false;
+{ const cols = [0xff4040, 0xff9a30, 0xffe040, 0x50d060, 0x40a0ff, 0x6050ff, 0xb050ff]; const mat = new THREE.MeshBasicMaterial({ vertexColors: false, transparent: true, opacity: 0, depthWrite: false, fog: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+  rainbow.material = mat; cols.forEach((c, i) => { const m = new THREE.Mesh(new THREE.TorusGeometry(60 - i * 1.4, 0.7, 6, 80, Math.PI), mat.clone()); m.material.color.set(c); m.onBeforeRender = () => { m.material.opacity = mat.opacity; }; rainbow.add(m); }); }
+rainbow.position.set(START_POS.x, 0, START_POS.y - 70); scene.add(rainbow);
+const sunLight = new THREE.DirectionalLight(0xffe6b0, 0); sunLight.position.set(30, 80, 20); scene.add(sunLight);
 const DEMO = /[?&]demo/.test(location.search);
 const AP = { stuckT: 0, last: null, wait: 0, wrongDone: false };
 function autopilot(dt) {
@@ -943,7 +963,7 @@ const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2,
 
 function win() {
   if (G.phase !== 'play') return;
-  G.phase = 'won'; G.endT = 0; setTimeout(() => narrate('天，合上了。水退了。人间，回来了。', { rate: 0.75, pitch: 0.8 }), 1500); document.exitPointerLock?.();
+  G.phase = 'won'; G.endT = 0; $('hud').hidden = true; $('keys') && ($('keys').hidden = true); say('天，合上了。人间，回来了。 · The sky is whole. The world returns.', 6000); document.exitPointerLock?.();
   $('prompt').classList.remove('on'); $('act').hidden = true;
   EL.forEach((e, i) => pluck(e.note, 5, 0.16, i * 0.35)); EL.forEach(e => pluck(e.note / 2, 6, 0.1, 2));
   crackSegs.forEach(s => { s.mended = 1; emit(s.center, 0xfff2c0, 120, 12, 0, 3); }); flash(0xfff2c0); if (droneG) droneG.gain.linearRampToValueAtTime(0.09, AC.currentTime + 4);
@@ -954,7 +974,7 @@ function win() {
     $('end-time').textContent = fmt(G.t - G.t0); $('end-miss').textContent = G.mistakes;
     $('end-order').textContent = G.chain.map(k => EL.find(e => e.key === k).zh).join(' → ');
     $('end').hidden = false;
-  }, 7000);
+  }, 12000);
 }
 function lose() {
   G.phase = 'lost'; document.exitPointerLock?.(); stinger(); narrate('洪水吞没了山谷。一切，都沉入了黑暗。', { rate: 0.7, pitch: 0.4 }); thud();
