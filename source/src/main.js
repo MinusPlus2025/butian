@@ -942,11 +942,11 @@ function startGame() { audioInit(); musicInit(); bgmPlay(); resetGame(); G.start
 let seenIntro = false;
 async function cinematic() {
   audioInit(); $('intro').hidden = true; const c = $('cine'); c.hidden = false; const line = $('cine-line');
-  const lines = [['往古之时，四极废，九州裂。', 4200], ['天，塌了。', 3000], ['洪水从天的裂缝里倾泻而下，淹没了大地，世界失去了颜色。', 6200], ['只有你，女娲，能把天补上。', 4200], ['在洪水吞没山谷之前，找到五行之石。', 4500]];
+  const lines = [['往古之时，四极废，九州裂。', 'In ancient times, the four pillars broke and the nine lands split.', 4500], ['天，塌了。', 'The sky fell.', 3200], ['洪水从天的裂缝里倾泻而下，世界失去了颜色。', 'A flood poured through the crack, and the world lost its colour.', 5500], ['只有你，女娲，能把天补上。', 'Only you, Nüwa, can mend the sky.', 4200], ['在洪水吞没山谷之前，找到五行之石。', 'Find the five elemental stones before the flood takes the valley.', 4800]];
   let skip = false; c.onclick = () => { skip = true; };
-  for (const [t, ms] of lines) {
-    if (skip) break; line.classList.remove('on'); await new Promise(r => setTimeout(r, 300)); line.textContent = t; line.classList.add('on');
-    narrate(t, { rate: 0.78, pitch: 0.45 }); stinger(); heartbeat(0.5);
+  for (const [t, en, ms] of lines) {
+    if (skip) break; line.classList.remove('on'); await new Promise(r => setTimeout(r, 300)); line.innerHTML = ''; line.append(t, Object.assign(document.createElement('small'), { textContent: en })); line.classList.add('on');
+    stinger(); heartbeat(0.5);
     for (let k = 0; k < ms / 100 && !skip; k++) await new Promise(r => setTimeout(r, 100));
   }
   try { speechSynthesis.cancel(); } catch (_) {}

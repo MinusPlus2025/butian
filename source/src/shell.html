@@ -85,6 +85,7 @@ button.ghost { background: transparent; color: var(--paper); border: 1px solid v
 #cine { position: fixed; inset: 0; z-index: 20; background: radial-gradient(ellipse at 50% 40%, #2a0d0a 0%, #000 70%); display: grid; place-items: center; padding: 24px; cursor: pointer; }
 #cine-line { font: 400 clamp(2rem, 5.5vw, 3.6rem) var(--brush); letter-spacing: .18em; color: #efe2cc; text-align: center; max-width: 22em; line-height: 1.5; opacity: 0; transition: opacity 1.2s; text-shadow: 0 0 30px rgba(200,40,30,.5); }
 #cine-line.on { opacity: 1; }
+#cine-line small { display: block; margin-top: .9rem; font: italic 400 clamp(1rem, 2.2vw, 1.4rem) var(--latin); letter-spacing: .04em; color: #bfae98; text-shadow: none; }
 #cine .skip { position: absolute; right: 20px; bottom: 20px; font-size: .8rem; color: #777; }
 #sub { position: fixed; left: 50%; top: calc(110px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 21; font: 400 clamp(1.4rem, 3vw, 2rem) var(--brush); letter-spacing: .2em; color: #ffd9c0; text-shadow: 0 0 18px rgba(190,40,30,.85), 0 2px 4px #000; opacity: 0; transition: opacity .4s; max-width: calc(100vw - 32px); text-align: center; pointer-events: none; }
 #sub.on { opacity: 1; }
