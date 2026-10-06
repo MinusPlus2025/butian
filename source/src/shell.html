@@ -124,25 +124,13 @@ button.ghost { background: transparent; color: var(--paper); border: 1px solid v
 </div>
 <button id="act" hidden aria-label="Interact">取</button>
 
-<div class="overlay" id="intro">
-  <div class="card">
-    <div class="title"><h1>补天</h1><span class="en">Mending the Sky</span><span class="seal">礼</span></div>
-    <p class="quote">往古之时，四极废，九州裂，天不兼覆……水浩洋而不息。</p>
-    <p class="story">天塌了一角。世界失去了颜色，洪水不息。<br>你是女娲。在山谷里找到五行原石，带回炉中炼成五色石，把天补上，再把这个世界送给人间。</p>
-    <p class="story-en">The sky has cracked. Colour has drained from the world and the flood keeps rising. You are Nüwa. Find the five elemental stones, forge them, mend the sky, and give this world to the people who will live in it.</p>
-    <div class="cycle">相生之序 · The cycle: <b style="color:var(--wood)">木</b>→<b style="color:var(--fire)">火</b>→<b style="color:var(--earth)">土</b>→<b style="color:var(--metal)">金</b>→<b style="color:#6f98d8">水</b>→<b style="color:var(--wood)">木</b></div>
-    <ol class="howto">
-      <li>跟着地上的金色光点跑到发光的原石旁，准星对准它，点击鼠标左键用手抓起来（WASD 移动，Shift 冲刺，空格跳）。</li>
-      <li>拿着石头跑回铜炉，对准炉口点击，把石头扔进去。炼成的五色石会飞上天补住裂缝。</li>
-      <li>下一块必须是上一块所"生"（屏幕上方会亮出该找哪块）。顺序错了，洪水猛涨。</li>
-      <li>随时按 Esc 暂停，可以继续、重来或退出。</li>
-    </ol>
-    <dl class="rules">
-      <dt>规则</dt><dd>第一块石头你自由选；之后每一块必须由上一块所"生"。顺序错了，石头会碎，洪水猛涨。<br><span class="small">First stone is your choice; each next stone must be born of the last. Wrong order shatters it and the flood surges.</span></dd>
-      <dt>操作</dt><dd>点击画面锁定视角 · WASD 移动 · 鼠标环顾 · Shift 疾行 · 左键 抓取 / 投入炉中（或按 E）<br><span class="small">Click to look · WASD move · Shift run · E take / forge. Touch: left side moves, right side looks.</span></dd>
-    </dl>
-    <button class="big" id="start" disabled>开 始</button>
-    <p class="small">World by World Labs Marble · Stones &amp; furnace by Tripo · Tripothon S1</p>
+<div class="overlay" id="intro" style="background:radial-gradient(ellipse at 50% 45%, rgba(0,0,0,.25), rgba(0,0,0,.8))">
+  <div class="card" style="justify-items:center;text-align:center;gap:1.4rem">
+    <div class="title" style="justify-content:center"><h1>补天</h1><span class="seal">礼</span></div>
+    <span class="en" style="font:italic 1.6rem var(--latin);color:var(--paper-dim);margin-top:-1rem">Mending the Sky</span>
+    <p class="quote">天塌了，洪水不息。你是女娲。</p>
+    <button class="big" id="start" disabled style="justify-self:center">开 始 · Start</button>
+    <p class="small">World Labs Marble · Tripo · Tripothon S1</p>
   </div>
 </div>
 
