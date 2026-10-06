@@ -378,6 +378,34 @@ async function setupHands() {
   else { wrapL = wrapR.clone(); wrapL.scale.x *= -1; } handL.add(wrapL); handL.add(new THREE.PointLight(0xfff0d0, 0.5, 2)); G.realHands = H.left !== false;
   G.handWrap = wrapR; G.palm = 0; if (H.tilt) hand.rotation.set(...H.tilt);
 }
+// a torn, glowing crack across the sky: jagged ribbons (white-hot core + red glow) that can tear open and heal
+const ribTex = (() => { const c = document.createElement('canvas'); c.width = 4; c.height = 64; const g = c.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, 64); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 4, 64); return new THREE.CanvasTexture(c); })();
+function ribbon(pts, w, color, opacity) {
+  const pos = [], uv = [], idx = [];
+  pts.forEach((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)]; const tx = b.x - a.x, ty = b.y - a.y, l = Math.hypot(tx, ty) || 1;
+    const t = i / (pts.length - 1), ww = w * (0.25 + 0.75 * Math.pow(Math.sin(t * Math.PI), 0.6)) * (0.7 + Math.random() * 0.6);
+    const nx = -ty / l * ww / 2, ny = tx / l * ww / 2;
+    pos.push(p.x + nx, p.y + ny, p.z, p.x - nx, p.y - ny, p.z); uv.push(t, 0, t, 1);
+    if (i) { const k = (i - 1) * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+  });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, map: ribTex, transparent: true, opacity, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
+  m.renderOrder = 999; m.frustumCulled = false; return m;
+}
+function jag(a, b, n, amp) { const out = []; for (let i = 0; i <= n; i++) { const t = i / n, e = Math.sin(t * Math.PI); out.push(new THREE.Vector3(a.x + (b.x - a.x) * t + (Math.random() - 0.5) * 0.6, a.y + (b.y - a.y) * t + (Math.random() < 0.5 ? 1 : -1) * amp * Math.pow(Math.random(), 1.5) * (i && i < n ? 1 : 0.3), a.z + (b.z - a.z) * t + (Math.random() - 0.5) * 1.5 * e)); } return out; }
+function buildSkyCrack() {
+  const C = crackSegs.map(c => c.center);
+  crackSegs.forEach((s, i) => {
+    const a = i ? C[i - 1].clone().lerp(C[i], 0.5) : C[i].clone().add(new THREE.Vector3(-(C[1].x - C[0].x) * 0.6, -2, 2));
+    const b = i < C.length - 1 ? C[i].clone().lerp(C[i + 1], 0.5) : C[i].clone().add(new THREE.Vector3((C[i].x - C[i - 1].x) * 0.6, -2, 2));
+    const S = C[1].distanceTo(C[0]) / 13, main = jag(a, b, 12, 1.4 * S), grp = new THREE.Group(), parts = [];
+    const add = (pts, wc, wg) => { const glow = ribbon(pts, wg, 0xff4a20, 0.55), core = ribbon(pts, wc, 0xfff2dc, 0.95); grp.add(glow, core); parts.push({ glow, core }); };
+    add(main, 0.7 * S, 6 * S);
+    for (let k = 0; k < 3; k++) { const from = main[2 + Math.floor(Math.random() * (main.length - 4))]; const dir = new THREE.Vector3((Math.random() - 0.5) * 6 * S, (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 4) * S, 0); add(jag(from, from.clone().add(dir), 5, 0.6 * S), 0.3 * S, 2.2 * S); }
+    scene.add(grp); s.rib = { grp, parts }; s.open = 0; s.delay = i * 0.9;
+  });
+}
 async function setupProps() {
   setupHands();
   const W = CFG.world;
@@ -393,6 +421,7 @@ async function setupProps() {
       const orb = new THREE.Mesh(new THREE.SphereGeometry(W.crack[i][3] * 0.5, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, fog: false }));
       orb.position.copy(c.center); scene.add(orb); c.orb = orb;
     });
+    if (W.crack) buildSkyCrack();
   }
   for (const el of EL) {
     const stone = await makeStone(el);
@@ -581,7 +610,10 @@ let zhVoice = null; const VOICE = false;
 function pickVoice() { const vs = speechSynthesis?.getVoices?.() || []; zhVoice = vs.find(v => /zh[-_]CN/i.test(v.lang) && /Tingting|Yu-?shu|Xiaoxiao|Yunxi|Kangkang|Google/i.test(v.name)) || vs.find(v => /^zh/i.test(v.lang)) || null; }
 try { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; } catch (_) {}
 function narrate(text, { rate = 0.82, pitch = 0.55, interrupt = true } = {}) {
-  $('sub').textContent = text; $('sub').classList.add('on'); clearTimeout(narrate._t); narrate._t = setTimeout(() => $('sub').classList.remove('on'), 2500 + text.length * 260);
+  const EN = { '石头碎了……洪水在咆哮。': 'The stone shatters… the flood roars.', '只剩最后一块了。': 'Only one stone left.', '水已经漫过一半山谷。快，时间不多了。': 'The water has swallowed half the valley. Hurry.', '洪水就要吞没一切！': 'The flood is about to swallow everything!', '洪水吞没了山谷。一切，都沉入了黑暗。': 'The flood took the valley. All sank into darkness.' };
+  const en = EN[text] || (/^天补上了一角/.test(text) ? `A corner of the sky is mended. ${5 - G.chain.length} to go.` : '');
+  const zh = text.replace(/([。！])(?=[^\s])/g, '$1\n');
+  $('sub').innerHTML = ''; $('sub').append(zh); if (en) { const sm = document.createElement('small'); sm.textContent = en; $('sub').append(sm); } $('sub').classList.add('on'); clearTimeout(narrate._t); narrate._t = setTimeout(() => $('sub').classList.remove('on'), 2500 + text.length * 260);
   if (!VOICE) return;
   try { if (interrupt) speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = 'zh-CN'; if (zhVoice) u.voice = zhVoice; u.rate = rate; u.pitch = pitch; u.volume = 1; speechSynthesis.speak(u); } catch (_) {}
 }
@@ -864,12 +896,25 @@ function update(dt) {
     if (s.el) { s.mesh.material.color.lerpColors(new THREE.Color(0xfff6e0), new THREE.Color(s.el.color), s.mended); }
     s.mesh.material.opacity = (1 - s.mended * 0.85) * flick;
     s.glow.material.opacity = 0.18 * (1 - s.mended) * flick;
+    if (s.rib) {
+      if (G.phase === 'cine' || G.phase === 'play') { if (s.delay > 0) s.delay -= dt; else if (s.open < 1) { const was = s.open; s.open = Math.min(1, s.open + dt * 0.6); if (was === 0) { noiseBurst(0.9, 2400, 200, 0.12, 'bandpass'); drum(0.2); } } }
+      const tear = s.open, hot = s.el ? 0 : 1, m = Math.min(1, s.mended), bf = boltFlash || 0;
+      const n1 = 0.75 + 0.25 * Math.sin(G.t * 23 + s.center.x) * Math.sin(G.t * 9.7 + s.center.y);
+      s.rib.parts.forEach((pp, j) => {
+        const cnt = pp.core.geometry.index.count, show = Math.floor(cnt * Math.min(1, tear * (j ? 1.6 : 1.15) - (j ? 0.5 : 0)) / 6) * 6;
+        pp.core.geometry.setDrawRange(0, Math.max(0, show)); pp.glow.geometry.setDrawRange(0, Math.max(0, show));
+        if (s.el) { pp.core.material.color.lerpColors(new THREE.Color(0xfff2dc), new THREE.Color(s.el.color), m); pp.glow.material.color.set(s.el.color); }
+        pp.core.material.opacity = hot ? (0.85 * n1 + bf * 0.3) : THREE.MathUtils.lerp(0.95, G.phase === 'won' ? 0.25 : 0.4, m);
+        pp.glow.material.opacity = hot ? (0.45 + 0.25 * Math.sin(G.t * 2.2 + j + s.center.x) + bf * 0.5) : THREE.MathUtils.lerp(0.8, 0.12, m);
+      });
+      if (!s.el && tear >= 1 && Math.random() < dt * 0.4) { s.open = 0.75; } // the crack keeps ripping open again
+    }
     if (s.orb && !s.el && (G.phase === 'play' || G.phase === 'cine')) {
       const pul = 0.5 + 0.5 * Math.sin(G.t * 3.1 + s.center.x) * Math.sin(G.t * 7.3 + s.center.z);
-      s.orb.material.color.setRGB(1, 0.35 + pul * 0.5, 0.25 + pul * 0.3); s.orb.material.blending = THREE.AdditiveBlending; s.orb.material.opacity = 0.25 + pul * 0.45; s.orb.scale.set(1.6 + pul * 0.5, 0.35 + pul * 0.15, 1.6 + pul * 0.5);
+      s.orb.material.color.setRGB(1, 0.35 + pul * 0.5, 0.25 + pul * 0.3); s.orb.material.blending = THREE.AdditiveBlending; s.orb.material.opacity = s.rib ? 0 : 0.25 + pul * 0.45; s.orb.scale.set(1.6 + pul * 0.5, 0.35 + pul * 0.15, 1.6 + pul * 0.5);
       if (Math.random() < dt * 2.5) emit(s.center.clone().add(new THREE.Vector3((Math.random() - 0.5) * 6, -1, (Math.random() - 0.5) * 3)), Math.random() < 0.5 ? 0xff7a3a : 0x777777, 6, 1.5, -6, 2.5);
     } else if (s.orb && !s.el) s.orb.material.opacity = 0;
-    if (s.orb && s.el) { s.orb.material.color.set(s.el.color); s.orb.material.opacity = Math.sin(Math.min(1, s.mended) * Math.PI) * 0.9; s.orb.scale.setScalar(0.4 + s.mended * 1.6); }
+    if (s.orb && s.el) { s.orb.material.color.set(s.el.color); s.orb.material.opacity = Math.sin(Math.min(1, s.mended) * Math.PI) * (s.rib ? 0.3 : 0.9); s.orb.material.blending = THREE.AdditiveBlending; s.orb.scale.setScalar(0.4 + s.mended * 1.6); }
   });
   G.restoreAnim.forEach((r, i) => { if (r > 0 && r < 1) G.restoreAnim[i] = Math.min(1, r + dt / 3.5); U.uRes.value[i] = easeOut(G.restoreAnim[i]); });
   const prog = G.restoreAnim.reduce((a, b) => a + b, 0) / 5;
@@ -1043,7 +1088,7 @@ function resetGame() {
   G.phase = 'play'; G.water = CFG.world?.water?.water ?? -2.6; G.rate = CFG.world?.water?.rate ?? 0.034; G.carrying = null; G.forging = 0; G.forgeEl = null;
   G.chain = []; G.mistakes = 0; throws.length = 0; G.restoreAnim = [0, 0, 0, 0, 0]; U.uAll.value = 0; G.t0 = G.t; flights.length = 0;
   for (const o of G.ores) { o.taken = false; o.used = false; o.stone.visible = true; o.stone.scale.setScalar(1); o.stone.position.copy(o.home); o.beam.visible = true; o.light.visible = true; }
-  crackSegs.forEach(s => { s.mended = 0; s.el = null; s.mesh.material.color.set(0xfff6e0); });
+  crackSegs.forEach(s => { s.mended = 0; s.el = null; s.mesh.material.color.set(0xfff6e0); if (s.rib) s.rib.parts.forEach(pp => { pp.core.material.color.set(0xfff2dc); pp.glow.material.color.set(0xff4a20); }); });
   G.villagers.forEach(v => v.visible = false);
   player.pos.set(START_POS.x, groundFn(START_POS.x, START_POS.y), START_POS.y); player.yaw = 0; player.pitch = 0.12;
   $('end').hidden = true; $('lose').hidden = true; $('intro').hidden = true; $('hud').hidden = false;
@@ -1086,4 +1131,4 @@ addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; cam
 })();
 
 // test / recording hooks
-window.__butian = { hand, handL, FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };
+window.__butian = { crackSegs, hand, handL, FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };

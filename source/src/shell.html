@@ -94,7 +94,8 @@ button.ghost { background: transparent; color: var(--paper); border: 1px solid v
 #cine-line.on { opacity: 1; }
 #cine-line small { display: block; margin-top: .9rem; font: italic 400 clamp(1rem, 2.2vw, 1.4rem) var(--latin); letter-spacing: .04em; color: #bfae98; text-shadow: none; }
 #cine .skip { position: absolute; right: 20px; bottom: 20px; font-size: .8rem; color: #777; }
-#sub { position: fixed; left: 50%; top: calc(110px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 21; font: 400 clamp(1.4rem, 3vw, 2rem) var(--brush); letter-spacing: .2em; color: #ffd9c0; text-shadow: 0 0 18px rgba(190,40,30,.85), 0 2px 4px #000; opacity: 0; transition: opacity .4s; max-width: calc(100vw - 32px); text-align: center; pointer-events: none; }
+#sub { position: fixed; left: 50%; width: max-content; top: calc(110px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 21; font: 400 clamp(1.3rem, 2.6vw, 1.8rem) var(--brush); letter-spacing: .12em; white-space: pre-line; word-break: keep-all; line-height: 1.5; color: #ffd9c0; text-shadow: 0 0 18px rgba(190,40,30,.85), 0 2px 4px #000; opacity: 0; transition: opacity .4s; max-width: calc(100vw - 32px); text-align: center; pointer-events: none; }
+#sub small { display: block; font: italic 500 clamp(.85rem, 1.4vw, 1.05rem) 'Cormorant Garamond', serif; letter-spacing: .04em; color: #f0e2cc; text-shadow: 0 1px 3px #000; margin-top: 4px; white-space: normal; }
 #sub.on { opacity: 1; }
 #keys { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 5; display: grid; gap: 5px; font-size: .78rem; color: #f4ead6; text-shadow: 0 1px 2px #000; pointer-events: none; }
 #keys div { display: flex; align-items: center; gap: 6px; }
