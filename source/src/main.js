@@ -152,7 +152,7 @@ const crackSegs = [];
 // ---------- world: procedural fallback ----------
 const world = new THREE.Group(); scene.add(world);
 let groundMeshes = [];
-let groundFn = terrainH;
+let groundFn = terrainH, groundLow = null;
 function buildProceduralWorld() {
   const W = 300, D = 340, SX = 150, SZ = 170;
   const geo = new THREE.PlaneGeometry(W, D, SX, SZ); geo.rotateX(-Math.PI / 2);
@@ -289,6 +289,7 @@ async function buildSplatWorld(W) {
       scene.add(g); g.updateMatrixWorld(true);
       const ray = new THREE.Raycaster(); const down = new THREE.Vector3(0, -1, 0);
       groundFn = (x, z) => { ray.set(new THREE.Vector3(x, W.rayTop ?? 400, z), down); const h = ray.intersectObjects(groundMeshes, false)[0]; return h ? h.point.y : (W.floor ?? 0); };
+      groundLow = (x, z) => { ray.set(new THREE.Vector3(x, W.rayTop ?? 400, z), down); const hs = ray.intersectObjects(groundMeshes, false); return hs.length ? hs[hs.length - 1].point.y : (W.floor ?? 0); };
     }
   } else groundFn = () => (W.floor ?? 0);
 }
