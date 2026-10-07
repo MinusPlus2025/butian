@@ -1277,6 +1277,7 @@ function update(dt) {
       const ny = groundFn(nx, nz, head);
       // a slope too steep blocks you, but never for long: after a moment you are let through so nobody gets trapped
       if (ny - gy < 2.2 * Math.max(dt * 10, 0.4) || ny < gy || (G.stuckT = (G.stuckT || 0) + dt) > 0.6) { player.pos.x = nx; player.pos.z = nz; if (ny - gy < 1) G.stuckT = 0; }
+      { const fx = player.pos.x - FURNACE_POS.x, fz = player.pos.z - FURNACE_POS.y, fd = Math.hypot(fx, fz), fr = CFG.world?.furnaceR ?? 2.3; if (G.furnace && fd < fr) { const k = fr / (fd || 1); player.pos.x = FURNACE_POS.x + (fd ? fx * k : fr); player.pos.z = FURNACE_POS.y + fz * k; } } // the furnace is solid: the camera never ends up inside it
       G.walkT = (G.walkT || 0) + dt * sp * 0.9; if (Math.floor(G.walkT / Math.PI) !== G.lastStep) { G.lastStep = Math.floor(G.walkT / Math.PI); step(); if (depth > 0.2) emit(new THREE.Vector3(player.pos.x, G.water + 0.05, player.pos.z), 0xcfe3f0, 6, 1.2, 1.2, 0.6); }
     }
     const lim = CFG.world?.bounds || [-140, 140, -160, 160];
@@ -1515,6 +1516,13 @@ const TRAIL_N = 40;
 const trail = new THREE.InstancedMesh(new THREE.SphereGeometry(0.18, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffd060, transparent: true, opacity: 0.9, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }), TRAIL_N);
 trail.frustumCulled = false; scene.add(trail); const tM = new THREE.Matrix4();
 let furnaceBeam = null;
+const RING_N = 56, ring = new THREE.InstancedMesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.85, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }), RING_N);
+ring.frustumCulled = false; ring.visible = false; scene.add(ring); let ringBuilt = false; const rM = new THREE.Matrix4();
+function throwRing(on) {
+  ring.visible = on; if (!on) return;
+  if (!ringBuilt) { ringBuilt = true; const R = THROW_R() - 0.3; for (let i = 0; i < RING_N; i++) { const a = i / RING_N * Math.PI * 2, x = FURNACE_POS.x + Math.cos(a) * R, z = FURNACE_POS.y + Math.sin(a) * R; rM.makeTranslation(x, groundFn(x, z) + 0.15, z); ring.setMatrixAt(i, rM); } ring.instanceMatrix.needsUpdate = true; }
+  const inside = furnaceDist() < THROW_R(); ring.material.opacity = inside ? 0.95 : 0.45 + 0.25 * Math.sin(G.t * 3); ring.material.color.setHex(inside && canThrow() ? 0xfff2b0 : 0xffb040);
+}
 function guideBeams(target) {
   if (!furnaceBeam && G.furnace) { const src = G.ores[0].beam; furnaceBeam = new THREE.Mesh(src.geometry, src.material.clone()); furnaceBeam.material.uniforms.uCol.value = new THREE.Color(0xffd27a);
     const bm = furnaceBeam.material; furnaceBeam.onBeforeRender = (r, sc, cam) => { bm.uniforms.uOp.value = bm.opacity; bm.uniforms.uT.value = G.t; furnaceBeam.rotation.y = Math.atan2(cam.position.x - furnaceBeam.position.x, cam.position.z - furnaceBeam.position.z); }; scene.add(furnaceBeam); }
@@ -1523,18 +1531,19 @@ function guideBeams(target) {
 }
 function updateGuide() {
   const g = $('guide');
-  if (G.phase !== 'play' || G.forging) { g.hidden = true; trail.visible = false; guideBeams(null); if (furnaceBeam) furnaceBeam.visible = false; return; }
-  let tx, tz, label;
-  if (G.carrying) { tx = FURNACE_POS.x; tz = FURNACE_POS.y; label = '铜炉 · Furnace'; }
+  if (G.phase !== 'play' || G.forging) { g.hidden = true; trail.visible = false; throwRing(false); guideBeams(null); if (furnaceBeam) furnaceBeam.visible = false; return; }
+  let tx, tz, label, ty;
+  if (G.carrying) { tx = FURNACE_POS.x; tz = FURNACE_POS.y; ty = G.furnace.y + (CFG.world?.furnaceSize ?? 3) + 0.6; label = '铜炉 · Furnace'; }
   else {
     const need = G.chain.length ? NEXT[G.chain[G.chain.length - 1]] : null; let bd = 1e9, best = null;
     for (const o of G.ores) { if (o.taken || o.used || (need && o.el.key !== need)) continue; const d = Math.hypot(o.home.x - player.pos.x, o.home.z - player.pos.z); if (d < bd) { bd = d; best = o; } }
-    if (!best) { g.hidden = true; trail.visible = false; guideBeams(null); return; }
-    tx = best.home.x; tz = best.home.z; label = `${best.el.zh}石 · ${best.el.en}`;
+    if (!best) { g.hidden = true; trail.visible = false; throwRing(false); guideBeams(null); return; }
+    tx = best.home.x; tz = best.home.z; ty = best.home.y + 1.6; label = `${best.el.zh}石 · ${best.el.en}`;
   }
   guideBeams(G.carrying ? 'furnace' : G.ores.find(o => o.home.x === tx && o.home.z === tz));
   const dist = Math.hypot(tx - player.pos.x, tz - player.pos.z);
-  gV.set(tx, groundFn(tx, tz) + 2, tz).project(camera);
+  gV.set(tx, ty, tz).project(camera);
+  throwRing(!!G.carrying);
   let on = gV.z < 1 && Math.abs(gV.x) < 0.85 && Math.abs(gV.y) < 0.85;
   let x, y, ang;
   let turn = '';
@@ -1556,7 +1565,8 @@ function updateGuide() {
     tM.makeScale(sc, sc, sc).setPosition(x, Math.max(groundFn(x, z), G.water) + 0.25, z); trail.setMatrixAt(i, tM);
   }
   trail.instanceMatrix.needsUpdate = true; trail.visible = true;
-  g.hidden = false; g.classList.toggle('edge', !on); g.style.transform = `translate(${x}px, ${y}px)`;
+  const mode = on ? 'on' : turn; if (G.gMode !== mode || G.gx == null) { G.gx = x; G.gy = y; G.gMode = mode; } else { G.gx += (x - G.gx) * 0.35; G.gy += (y - G.gy) * 0.35; } // steady, no jitter
+  g.hidden = false; g.classList.toggle('edge', !on); g.style.transform = `translate(${G.gx}px, ${G.gy}px)`;
   $('guide-arrow').style.transform = `rotate(${ang}deg)`;
   $('guide-text').textContent = (turn ? L(turn) + '  ' : '') + `${L(label)} · ${Math.round(dist)}m`;
 }
