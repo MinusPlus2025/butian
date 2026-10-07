@@ -637,7 +637,10 @@ async function setupProps() {
   const fire = new THREE.PointLight(0xff8a3c, 60, 22); fire.position.set(FURNACE_POS.x, fy + 3.2, FURNACE_POS.y); scene.add(fire);
   const ember = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 10), new THREE.MeshBasicMaterial({ color: 0xff7a20, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false })); ember.scale.y = 0.35;
   ember.position.set(FURNACE_POS.x, fy + (CFG.world?.furnaceSize ?? 3) * 0.78, FURNACE_POS.y); scene.add(ember);
-  G.furnace = { obj: f, fire, ember, y: fy };
+  ember.material.opacity = 0.18; // only a faint molten glow at the mouth; the real fire is the flame sheets above it
+  const flames = [0, 1, 2].map(i => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0), flameMat.clone()); m.material.uniforms.uSeed.value = i * 3.7; m.material.uniforms.uT = flameMat.uniforms.uT; m.material.uniforms.uPow = flameMat.uniforms.uPow; m.material.uniforms.uTint = flameMat.uniforms.uTint; m.material.uniforms.uMix = flameMat.uniforms.uMix;
+    m.userData.off = [(i - 1) * 0.28, 0, (i - 1) * 0.12]; m.renderOrder = 3; m.onBeforeRender = (r, sc, cam) => { m.rotation.y = Math.atan2(cam.position.x - m.position.x, cam.position.z - m.position.z); }; scene.add(m); return m; });
+  G.furnace = { obj: f, fire, ember, flames, y: fy };
   if (!W || W.failLevel == null) G.failLevel = fy + 0.6;
   for (let i = 0; i < 14; i++) {
     const v = makeVillager(i); v.visible = false; scene.add(v);
@@ -779,7 +782,44 @@ function emit(pos, color, n, speed = 3, up = 2, life = 1.4) {
     pCol[k * 3] = c.r; pCol[k * 3 + 1] = c.g; pCol[k * 3 + 2] = c.b; pLife[k] = life * (0.6 + Math.random() * 0.4);
   }
 }
+// fine pools for the furnace: needle-thin sparks that cool from white to red, and soft smoke that rises, spreads and fades
+const poolMat = (tex, blending) => new THREE.ShaderMaterial({ uniforms: { uTex: { value: tex }, uScale: { value: 400 } }, transparent: true, depthWrite: false, blending,
+  vertexShader: 'attribute vec3 color; attribute float alpha; attribute float size; varying vec3 vC; varying float vA; uniform float uScale; void main(){ vC = color; vA = alpha; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = clamp(size * uScale / max(0.1, -mv.z), 0.0, 256.0); }',
+  fragmentShader: 'uniform sampler2D uTex; varying vec3 vC; varying float vA; void main(){ vec4 t = texture2D(uTex, gl_PointCoord); gl_FragColor = vec4(vC, t.a * vA); if (gl_FragColor.a < 0.003) discard; }' });
+function makePool(n, tex, blending) {
+  const P = { n, pos: new Float32Array(n * 3).fill(-9999), col: new Float32Array(n * 3), vel: new Float32Array(n * 3), alpha: new Float32Array(n), size: new Float32Array(n), life: new Float32Array(n), max: new Float32Array(n), next: 0, geo: new THREE.BufferGeometry() };
+  ['position', 'color', 'alpha', 'size'].forEach((k, i) => P.geo.setAttribute(k, new THREE.BufferAttribute([P.pos, P.col, P.alpha, P.size][i], i < 2 ? 3 : 1)));
+  P.pts = new THREE.Points(P.geo, poolMat(tex, blending)); P.pts.frustumCulled = false; P.pts.onBeforeRender = (r, sc, cam) => { P.pts.material.uniforms.uScale.value = r.domElement.height * 0.5 * cam.projectionMatrix.elements[5]; }; scene.add(P.pts); return P;
+}
+const sparkTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d'); const r = g.createRadialGradient(16, 16, 0, 16, 16, 16); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.3, 'rgba(255,255,255,0.7)'); r.addColorStop(0.6, 'rgba(255,255,255,0.08)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 32, 32); return new THREE.CanvasTexture(c); })();
+const smokeTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); for (let i = 0; i < 9; i++) { const x = 18 + Math.random() * 28, y = 18 + Math.random() * 28, r0 = 9 + Math.random() * 13; const r = g.createRadialGradient(x, y, 0, x, y, r0); r.addColorStop(0, 'rgba(255,255,255,0.3)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); } return new THREE.CanvasTexture(c); })();
+const sparks = makePool(700, sparkTex, THREE.AdditiveBlending), smoke = makePool(160, smokeTex, THREE.NormalBlending);
+function spark(pos, n, spread = 0.5, up = 3, life = 1.2) {
+  for (let i = 0; i < n; i++) { const k = sparks.next++ % sparks.n;
+    sparks.pos[k * 3] = pos.x + (Math.random() - 0.5) * spread; sparks.pos[k * 3 + 1] = pos.y + Math.random() * 0.2; sparks.pos[k * 3 + 2] = pos.z + (Math.random() - 0.5) * spread;
+    sparks.vel[k * 3] = (Math.random() - 0.5) * 1.4; sparks.vel[k * 3 + 1] = up * (0.5 + Math.random() * 0.8); sparks.vel[k * 3 + 2] = (Math.random() - 0.5) * 1.4;
+    sparks.life[k] = sparks.max[k] = life * (0.4 + Math.random() * 0.6); sparks.size[k] = 0.025 + Math.random() * 0.035; }
+}
+function puff(pos, n = 1, dark = 0.16) {
+  for (let i = 0; i < n; i++) { const k = smoke.next++ % smoke.n;
+    smoke.pos[k * 3] = pos.x + (Math.random() - 0.5) * 0.6; smoke.pos[k * 3 + 1] = pos.y; smoke.pos[k * 3 + 2] = pos.z + (Math.random() - 0.5) * 0.6;
+    smoke.vel[k * 3] = (Math.random() - 0.5) * 0.3 + 0.2; smoke.vel[k * 3 + 1] = 0.8 + Math.random() * 0.5; smoke.vel[k * 3 + 2] = (Math.random() - 0.5) * 0.3;
+    smoke.life[k] = smoke.max[k] = 3 + Math.random() * 2; const g = dark + Math.random() * 0.08; smoke.col[k * 3] = g; smoke.col[k * 3 + 1] = g * 0.97; smoke.col[k * 3 + 2] = g * 0.95; }
+}
+const sparkHot = new THREE.Color(1, 0.95, 0.75), sparkMid = new THREE.Color(1, 0.5, 0.1), sparkCold = new THREE.Color(0.5, 0.06, 0.01), tmpCol = new THREE.Color();
+function updatePools(dt) {
+  const S = sparks; for (let k = 0; k < S.n; k++) { if (S.life[k] <= 0) continue; S.life[k] -= dt; const e = Math.max(0, S.life[k] / S.max[k]);
+    S.vel[k * 3] += Math.sin(G.t * 7 + k) * 2.4 * dt; S.vel[k * 3 + 2] += Math.cos(G.t * 6 + k * 1.7) * 2.4 * dt; S.vel[k * 3 + 1] -= dt * 0.5;
+    for (let j = 0; j < 3; j++) S.pos[k * 3 + j] += S.vel[k * 3 + j] * dt;
+    if (e > 0.5) tmpCol.lerpColors(sparkMid, sparkHot, (e - 0.5) * 2); else tmpCol.lerpColors(sparkCold, sparkMid, e * 2);
+    S.col[k * 3] = tmpCol.r; S.col[k * 3 + 1] = tmpCol.g; S.col[k * 3 + 2] = tmpCol.b; S.alpha[k] = (0.6 + 0.4 * Math.sin(G.t * 40 + k * 3.1)) * Math.min(1, e * 3); if (S.life[k] <= 0) { S.pos[k * 3 + 1] = -9999; S.alpha[k] = 0; } }
+  const M = smoke; for (let k = 0; k < M.n; k++) { if (M.life[k] <= 0) continue; M.life[k] -= dt; const e = Math.max(0, M.life[k] / M.max[k]);
+    M.vel[k * 3 + 1] *= 0.995; for (let j = 0; j < 3; j++) M.pos[k * 3 + j] += M.vel[k * 3 + j] * dt;
+    M.alpha[k] = Math.sin(Math.sqrt(1 - e) * Math.PI) * 0.55; M.size[k] = 0.8 + (1 - e) * 3.2; if (M.life[k] <= 0) { M.pos[k * 3 + 1] = -9999; M.alpha[k] = 0; } }
+  for (const P of [sparks, smoke]) for (const a of ['position', 'color', 'alpha', 'size']) P.geo.attributes[a].needsUpdate = true;
+}
 function updateParticles(dt) {
+  updatePools(dt);
   for (let k = 0; k < PMAX; k++) {
     if (pLife[k] <= 0) continue;
     pLife[k] -= dt; const f = pLife[k] <= 0 ? 0 : Math.min(1, pLife[k]);
@@ -1016,7 +1056,7 @@ function forgeDone(o) {
   const need = G.chain.length ? NEXT[G.chain[G.chain.length - 1]] : null;
   if (need && need !== o.el.key) {
     // wrong order: the stone shatters, the flood surges, the ore returns home
-    G.mistakes++; G.water += 1.4; stinger(); setTimeout(() => narrate('石头碎了……洪水在咆哮。'), 400); sfxCrash(); shake = 0.9; fovKick = -8; banner('石 碎', 'Wrong order · the flood surges', '#ff7a6a'); emit(new THREE.Vector3(FURNACE_POS.x, G.furnace.y + 3, FURNACE_POS.y), 0x555555, 140, 7, 2, 1.4); flash(0x223344);
+    G.mistakes++; G.water += 1.4; stinger(); setTimeout(() => narrate('石头碎了……洪水在咆哮。'), 400); sfxCrash(); shake = 0.9; fovKick = -8; banner('石 碎', 'Wrong order · the flood surges', '#ff7a6a'); puff(new THREE.Vector3(FURNACE_POS.x, G.furnace.y + 3, FURNACE_POS.y), 14, 0.1); spark(new THREE.Vector3(FURNACE_POS.x, G.furnace.y + 3, FURNACE_POS.y), 80, 1.2, 4, 1); flash(0x223344);
     const needEl = EL.find(e => e.key === need);
     say(`${o.el.zh}不承${EL.find(e => e.key === G.chain[G.chain.length - 1]).zh}，石碎了，洪水上涨。需要：${needEl.zh} · Wrong order! Need ${needEl.en}`, 4200);
     o.taken = false; o.stone.visible = true; o.stone.scale.setScalar(1); o.stone.position.copy(o.home); o.beam.visible = true; o.light.visible = true;
@@ -1024,7 +1064,7 @@ function forgeDone(o) {
   }
   // correct: the stone melts into the furnace and waits there; when all five are in, they fuse into one molten stone
   G.chain.push(o.el.key); o.used = true; o.stone.visible = false;
-  whoosh(); emit(new THREE.Vector3(FURNACE_POS.x, G.furnace.y + 3, FURNACE_POS.y), o.el.color, 120, 5, 3, 1.6);
+  whoosh(); emit(new THREE.Vector3(FURNACE_POS.x, G.furnace.y + 3, FURNACE_POS.y), o.el.color, 24, 2.5, 2.5, 1.2); spark(new THREE.Vector3(FURNACE_POS.x, G.furnace.y + 2.6, FURNACE_POS.y), 120, 0.8, 6, 1.8);
   furnaceGem(o.el); pluck(o.el.note, 3.2, 0.25);
   G.water = Math.max(CFG.world?.water?.water ?? -2.6, G.water - (CFG.world?.water?.drop ?? 1.2)); G.rate *= 0.9;
   hudRing();
@@ -1039,6 +1079,10 @@ function forgeDone(o) {
 }
 // the five molten stones inside the furnace, circling above its mouth
 const gems = [];
+// a stone in the fire glows from its own colour to white heat
+function heatStone(o, k) { o.stone.traverse(m => { if (!m.isMesh || !m.material) return; const mats = Array.isArray(m.material) ? m.material : [m.material];
+  mats.forEach(mt => { if (!mt.emissive) return; if (!mt.userData.e0) mt.userData.e0 = [mt.emissive.clone(), mt.emissiveIntensity]; if (k <= 0) { mt.emissive.copy(mt.userData.e0[0]); mt.emissiveIntensity = mt.userData.e0[1]; return; }
+    mt.emissive.lerpColors(new THREE.Color(o.el.color), new THREE.Color(0xfff0c0), k * k); mt.emissiveIntensity = 0.4 + k * 2.2; }); }); }
 function furnaceGem(el) {
   const m = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), new THREE.MeshBasicMaterial({ color: el.color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
   scene.add(m); gems.push(m); G.furnace.ember.material.color.lerp(new THREE.Color(el.color), 0.35);
@@ -1047,6 +1091,23 @@ function updateGems(dt) {
   if (G.fuse) return updateFuse(dt);
   gems.forEach((m, i) => { const a = G.t * 1.6 + i * Math.PI * 2 / 5; m.visible = G.phase === 'play' || G.phase === 'cine'; m.position.set(FURNACE_POS.x + Math.cos(a) * 0.9, G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.85 + Math.sin(G.t * 3 + i) * 0.15, FURNACE_POS.y + Math.sin(a) * 0.9); });
 }
+// furnace fire: camera-facing sheets of rising turbulent noise, white-hot at the root, orange, then dark red tongues
+const flameMat = new THREE.ShaderMaterial({ uniforms: { uT: { value: 0 }, uSeed: { value: 0 }, uPow: { value: 0.8 }, uTint: { value: new THREE.Color(0xff8a3c) }, uMix: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform float uT, uSeed, uPow, uMix; uniform vec3 uTint; varying vec2 vUv;
+    float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+    float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * n(p); p = p * 2.03 + 1.7; a *= 0.5; } return s; }
+    void main(){ float x = (vUv.x - 0.5) * 2.0, y = vUv.y; float t = uT + uSeed;
+      vec2 q = vec2(x * 2.2 + uSeed, y * 3.0 - t * 2.4);
+      float d = fbm(q + vec2(fbm(q * 1.3 + t * 0.4) - 0.5, 0.0) * 1.2);
+      float w = max(0.05, 0.85 - y * 0.7);
+      float f = (1.0 - smoothstep(0.0, w, abs(x + (d - 0.5) * 0.5 * y))) * (d * 1.5 - y * 1.15 + 0.15);
+      f = clamp(f * 2.4, 0.0, 1.0) * smoothstep(0.0, 0.12, y);
+      vec3 c = mix(vec3(0.45, 0.04, 0.0), vec3(1.0, 0.42, 0.06), smoothstep(0.08, 0.45, f));
+      c = mix(c, vec3(1.0, 0.86, 0.55), smoothstep(0.5, 0.9, f));
+      c = mix(c, uTint * (0.6 + f), uMix * smoothstep(0.15, 0.7, f) * 0.6);
+      gl_FragColor = vec4(c * f * uPow, f); }` });
 // five stones become one: a molten five-coloured slurry Nüwa carries to the sky in a single flight
 // the molten slurry itself: opaque, glowing five-colour rock that churns, with a white-hot rim (reads against a bright sky)
 const moltenMat = new THREE.ShaderMaterial({ uniforms: { uT: { value: 0 }, uA: { value: 1 } },
@@ -1454,7 +1515,7 @@ function update(dt) {
   for (let i = throws.length - 1; i >= 0; i--) {
     const th = throws[i]; th.t += dt / 0.7; const k = Math.min(1, th.t);
     th.o.stone.position.lerpVectors(th.from, th.to, k); th.o.stone.position.y += Math.sin(k * Math.PI) * 2.5; th.o.stone.scale.setScalar(THREE.MathUtils.lerp(0.16, 0.5, k)); th.o.stone.rotation.x += dt * 10; emit(th.o.stone.position, th.o.el.color, 3, 0.3, 0.2, 0.7);
-    if (k >= 1) { throws.splice(i, 1); th.o.stone.visible = false; clang(0.28); emit(th.to, th.o.el.color, 60, 4, 4, 1.2); emit(th.to, 0xffa040, 80, 5, 3, 1); shake = 0.25; G.forging = 0.001; G.forgeEl = th.o; say(`炼石中…… ${th.o.el.zh} · Forging ${th.o.el.en}`); sfxForge(); fovKick = 6; }
+    if (k >= 1) { throws.splice(i, 1); th.o.stone.visible = false; clang(0.28); emit(th.to, th.o.el.color, 14, 2, 2, 0.8); spark(th.to, 60, 0.4, 5, 1.6); puff(th.to, 3); shake = 0.25; G.forging = 0.001; G.forgeEl = th.o; say(`炼石中…… ${th.o.el.zh} · Forging ${th.o.el.en}`); sfxForge(); fovKick = 6; }
   }
   // ores bob, carried stone follows
   for (const o of G.ores) {
@@ -1470,11 +1531,15 @@ function update(dt) {
   }
   // forging
   if (G.forging) {
-    G.forging += dt; const o = G.forgeEl; emit(new THREE.Vector3(FURNACE_POS.x, G.furnace.y + 2.6, FURNACE_POS.y), Math.random() < 0.5 ? 0xffa040 : o.el.color, 6, 2.5, 3, 1.2);
-    o.stone.position.set(FURNACE_POS.x, G.furnace.y + (CFG.world?.furnaceSize ?? 3) + 0.4 + G.forging * 0.6, FURNACE_POS.y); o.stone.rotation.y += dt * 6;
+    G.forging += dt; const o = G.forgeEl, k = Math.min(1, G.forging / 1.6), top = G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.85;
+    o.stone.position.set(FURNACE_POS.x, top + 0.35 - k * k * 0.9, FURNACE_POS.y); o.stone.rotation.y += dt * 1.5; o.stone.scale.setScalar(0.5 * (1 - k * 0.55)); heatStone(o, k);
+    spark(tmpA.set(FURNACE_POS.x, top, FURNACE_POS.y), 4, 0.6, 3.5, 1.4); if (Math.random() < dt * 6) puff(tmpA.set(FURNACE_POS.x, top + 1.6, FURNACE_POS.y));
     G.furnace.fire.intensity = 60 + Math.sin(G.t * 40) * 30 + G.forging * 60;
-    if (G.forging > 1.6) { G.forging = 0; G.forgeEl = null; forgeDone(o); }
-  } else if (G.furnace) { G.furnace.fire.intensity = 50 + Math.sin(G.t * 9) * 12; if (Math.random() < dt * 14) emit(new THREE.Vector3(FURNACE_POS.x + (Math.random() - .5), G.furnace.y + 2.4, FURNACE_POS.y + (Math.random() - .5)), 0xff9a3c, 1, 0.6, 1.6, 1.6); }
+    if (G.forging > 1.6) { G.forging = 0; G.forgeEl = null; heatStone(o, 0); forgeDone(o); }
+  } else if (G.furnace) { G.furnace.fire.intensity = 50 + Math.sin(G.t * 9) * 12 + Math.sin(G.t * 23) * 6; if (Math.random() < dt * 10) spark(tmpA.set(FURNACE_POS.x, G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.85, FURNACE_POS.y), 1, 0.5, 2.2, 1.6); if (Math.random() < dt * 1.5) puff(tmpA.set(FURNACE_POS.x, G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.85 + 1.4, FURNACE_POS.y)); }
+  if (G.furnace) { const fz = CFG.world?.furnaceSize ?? 3, hot = G.forging ? Math.min(1, G.forging * 2) : 0, n = G.chain?.length || 0;
+    flameMat.uniforms.uT.value = G.t; flameMat.uniforms.uPow.value = 0.75 + hot * 0.6 + n * 0.06; flameMat.uniforms.uMix.value = hot; if (G.forgeEl) flameMat.uniforms.uTint.value.set(G.forgeEl.el.color);
+    G.furnace.flames.forEach((m, i) => { const o = m.userData.off; m.visible = G.furnace.obj.visible; m.position.set(FURNACE_POS.x + o[0], G.furnace.y + fz * 0.8, FURNACE_POS.y + o[2]); m.scale.set((i === 1 ? 1.3 : 0.9) * (1 + hot * 0.3), (i === 1 ? 1.9 : 1.3) * (1 + hot * 0.7 + n * 0.08), 1); }); }
   // flights to the sky
   for (let i = flights.length - 1; i >= 0; i--) {
     if (flights[i].all) { nuwaFlightAll(flights[i], i, dt); continue; }
@@ -1725,12 +1790,16 @@ function lose() {
 function shuffleOres() {
   const R = CFG.world?.regions; if (!R) return;
   const idx = R.map((_, i) => i); for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
-  G.ores.forEach(o => { const i = EL.indexOf(o.el), [x, z] = R[idx[i]], y = groundFn(x, z);
+  // each stone lands somewhere new inside its patch of valley, on walkable ground and clear of the furnace
+  const jit = (cx, cz) => { const y0 = groundFn(cx, cz); for (let t = 0; t < 14; t++) { const a = Math.random() * 6.283, r = 1 + Math.random() * 3.5, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, y = groundFn(x, z);
+      if (y !== 0 && y > -0.8 && y < 6 && Math.abs(y - y0) < 2 && Math.hypot(x - FURNACE_POS.x, z - FURNACE_POS.y) > 5 && Math.hypot(x - START_POS.x, z - START_POS.y) > 6) return [x, z]; } return [cx, cz]; };
+  G.ores.forEach(o => { const i = EL.indexOf(o.el), [x, z] = jit(...R[idx[i]]), y = groundFn(x, z);
     o.el.pos = [x, z]; U.uReg.value[i].set(x, 0, z, CFG.world.regionR || REGION_R); o.home.set(x, y, z); o.beam.position.set(x, y + 30, z); o.light.position.set(x, y + 2, z); });
 }
 const BEST_KEY = 'butian.best';
 function readBest() { try { const v = +localStorage.getItem(BEST_KEY); return v > 0 ? v : null; } catch (e) { return null; } }
 function resetGame() {
+  { const S = CFG.world?.starts; if (S && S.length) { let last = -1; try { last = +localStorage.getItem('butian.start'); } catch (e) {} let i; do { i = Math.floor(Math.random() * S.length); } while (S.length > 1 && i === last); try { localStorage.setItem('butian.start', i); } catch (e) {} START_POS.set(S[i][0], S[i][1]); } } // a different place in the valley each time
   shuffleOres();
   heldHide(); gems.forEach(m => scene.remove(m)); gems.length = 0; if (G.furnace) G.furnace.ember.material.color.set(0xff7a20); flights.forEach(f => f.obj.parent && scene.remove(f.obj)); flights.length = 0;
   $('drown').style.opacity = 0; endingMusic(false); $('giftseal').hidden = true; G.paused = false; $('pause').hidden = true; G.tut = 0; $('guide').hidden = false;
@@ -1739,7 +1808,6 @@ function resetGame() {
   for (const o of G.ores) { o.taken = false; o.used = false; o.stone.visible = true; o.stone.scale.setScalar(1); o.stone.position.copy(o.home); o.beam.visible = true; o.light.visible = true; }
   crackSegs.forEach(s => { s.mended = 0; s.el = null; s.mesh.material.color.set(0xfff6e0); if (s.rib) s.rib.parts.forEach(pp => { pp.core.material.color.set(0xffe2b0); pp.glow.material.color.set(0xff4a20); }); });
   G.villagers.forEach(v => v.visible = false); G.cut = false; AV.fly = null; AV.camInit = false; nuwaBody.scale.setScalar(1); if (G.nuwaFade) { G.nuwaFade.forEach(([m, tr, o]) => { m.transparent = tr; m.opacity = o; }); G.nuwaFade = null; } nuwaBody.position.y = 0; if (G.fuse) { scene.remove(G.fuse.orb); G.fuse = null; } pillars.splice(0).forEach(p => scene.remove(p.m)); birds.forEach(b => b.g.visible = false); if (G.nuwaGlow) G.nuwaGlow.intensity = 0; G.rev = null; REV.set(0, 0, 0, -1); REV_SYNC.forEach(f => f(REV)); if (worldB) { worldB.visible = false; water.visible = true; if (splatMesh) splatMesh.visible = true; if (G.furnace) G.furnace.obj.visible = true; }
-  { const S = CFG.world?.starts; if (S && S.length) { const [sx, sz] = S[Math.floor(Math.random() * S.length)]; START_POS.set(sx, sz); } } // a different place in the valley each time
   player.pos.set(START_POS.x, groundFn(START_POS.x, START_POS.y), START_POS.y); player.yaw = Math.atan2(-(FURNACE_POS.x - START_POS.x), -(FURNACE_POS.y - START_POS.y)); player.pitch = 0.12; // facing the distant furnace
   G.endShowT = null; $('end').style.opacity = ''; $('end').hidden = true; $('lose').hidden = true; $('intro').hidden = true; $('hud').hidden = false;
   G.n50 = G.n80 = 0; hudRing(); say(TP ? '第一步：跟着金色光点走到发光的石头旁，按 E 或左键拾起 · Follow the golden dots to a glowing stone, then press E or click' : '第一步：跟着金色光点找到原石，点击抓起 · Follow the golden lights and grab an ore', 7000);
