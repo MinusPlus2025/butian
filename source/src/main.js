@@ -955,6 +955,7 @@ function handAction() {
     AV.reach = 0.45; reachT = 0.35;
     if (!G.carrying) { const o = nearestOreTP(); if (o) { G.grabFrom = o.stone.position.clone(); G.grabT = 0; return interact(o); } say('走到发光的五行石旁边，再按 E 或左键 · Walk up to a glowing stone, then press E or click', 2400); }
     else if (canThrow()) {
+      G.aimT = 0.8; // the view turns to frame the furnace in the middle as you throw
       const o = G.carrying; G.carrying = null; const fpos = new THREE.Vector3(FURNACE_POS.x, G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.8, FURNACE_POS.y);
       if (G.held) { G.held.g.getWorldPosition(o.stone.position); heldHide(); } o.stone.visible = true; throws.push({ o, from: o.stone.position.clone(), to: fpos, t: 0 }); noiseBurst(0.35, 300, 900, 0.12, 'lowpass');
     } else say(furnaceDist() < THROW_R() ? '面向铜炉再投 · Face the furnace, then throw' : '带着石头走到铜炉旁边 · Carry it to the bronze furnace', 2000);
@@ -1259,6 +1260,9 @@ function update(dt) {
 
   if (DEMO && dt > 0) autopilot(dt);
   // movement
+  if (G.aimT > 0 && G.furnace) { G.aimT -= dt; const dx = FURNACE_POS.x - player.pos.x, dz = FURNACE_POS.y - player.pos.z, d = Math.hypot(dx, dz) || 1;
+    let dy = Math.atan2(-dx, -dz) - player.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); const k = Math.min(1, dt * 7); player.yaw += dy * k;
+    const wantP = Math.atan2(G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.6 - (player.pos.y + 1.7), d); player.pitch += (wantP - player.pitch) * k; }
   if (G.phase === 'play' && !G.cut) {
     let fx = 0, fz = 0;
     if (keys.KeyW || keys.ArrowUp) fz -= 1; if (keys.KeyS || keys.ArrowDown) fz += 1;
@@ -1613,7 +1617,7 @@ function resetGame() {
   shuffleOres();
   heldHide(); gems.forEach(m => scene.remove(m)); gems.length = 0; if (G.furnace) G.furnace.ember.material.color.set(0xff7a20); flights.forEach(f => f.obj.parent && scene.remove(f.obj)); flights.length = 0;
   $('drown').style.opacity = 0; endingMusic(false); $('giftseal').hidden = true; G.paused = false; $('pause').hidden = true; G.tut = 0; $('guide').hidden = false;
-  G.phase = 'play'; G.qT = 12; G.water = CFG.world?.water?.water ?? -2.6; G.rate = CFG.world?.water?.rate ?? 0.034; G.carrying = null; G.forging = 0; G.forgeEl = null;
+  G.phase = 'play'; G.qT = 12; G.water = CFG.world?.water?.water ?? -2.6; G.rate = CFG.world?.water?.rate ?? 0.034; G.carrying = null; G.forging = 0; G.forgeEl = null; G.aimT = 0;
   G.chain = []; G.mistakes = 0; throws.length = 0; G.restoreAnim = [0, 0, 0, 0, 0]; U.uAll.value = 0; G.t0 = G.t; flights.length = 0; G.healR = 0; if (seam) { scene.remove(seam); seam = null; }
   for (const o of G.ores) { o.taken = false; o.used = false; o.stone.visible = true; o.stone.scale.setScalar(1); o.stone.position.copy(o.home); o.beam.visible = true; o.light.visible = true; }
   crackSegs.forEach(s => { s.mended = 0; s.el = null; s.mesh.material.color.set(0xfff6e0); if (s.rib) s.rib.parts.forEach(pp => { pp.core.material.color.set(0xffe2b0); pp.glow.material.color.set(0xff4a20); }); });
