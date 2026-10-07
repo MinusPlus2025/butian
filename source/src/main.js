@@ -1291,7 +1291,7 @@ function update(dt) {
   // movement
   if (G.aimT > 0 && G.furnace) { G.aimT -= dt; const dx = FURNACE_POS.x - player.pos.x, dz = FURNACE_POS.y - player.pos.z, d = Math.hypot(dx, dz) || 1;
     let dy = Math.atan2(-dx, -dz) - player.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); const k = Math.min(1, dt * 7); player.yaw += dy * k;
-    const wantP = Math.atan2(G.furnace.y + (CFG.world?.furnaceSize ?? 3) * (G.fuse ? 1.3 : 0.6) - (player.pos.y + 1.7), d); // while fusing, frame the slurry rising above the mouth player.pitch += (wantP - player.pitch) * k; }
+    const wantP = Math.atan2(G.furnace.y + (CFG.world?.furnaceSize ?? 3) * (G.fuse ? 1.3 : 0.6) - (player.pos.y + 1.7), d); /* while fusing, frame the slurry rising above the mouth */ player.pitch += (wantP - player.pitch) * k; }
   if (G.phase === 'play' && !G.cut) {
     let fx = 0, fz = 0;
     if (keys.KeyW || keys.ArrowUp) fz -= 1; if (keys.KeyS || keys.ArrowDown) fz += 1;
