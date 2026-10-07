@@ -1502,7 +1502,7 @@ function autopilot(dt) {
     handAction(); AP.wait = 1.2;
   }
 }
-const gV = new THREE.Vector3();
+const gV = new THREE.Vector3(), tmpGuide = new THREE.Vector3();
 const TRAIL_N = 40;
 const trail = new THREE.InstancedMesh(new THREE.SphereGeometry(0.18, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffd060, transparent: true, opacity: 0.9, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }), TRAIL_N);
 trail.frustumCulled = false; scene.add(trail); const tM = new THREE.Matrix4();
@@ -1522,7 +1522,12 @@ function updateGuide() {
   const on = gV.z < 1 && Math.abs(gV.x) < 0.85 && Math.abs(gV.y) < 0.85;
   let x, y, ang;
   if (on) { x = (gV.x + 1) / 2 * innerWidth; y = (1 - gV.y) / 2 * innerHeight - 40 + Math.sin(G.t * 4) * 8; ang = 180; }
-  else { let ax = gV.x, ay = gV.y; if (gV.z >= 1) { ax = -ax; ay = -ay; } const a = Math.atan2(-ay, ax); const r = Math.min(innerWidth, innerHeight) * 0.38; x = innerWidth / 2 + Math.cos(a) * r; y = innerHeight / 2 + Math.sin(a) * r; ang = a * 180 / Math.PI + 90; }
+  else { // off screen: a compass around the reticle by horizontal bearing (ahead = up, behind = down), never by the raw projection, which flips for points behind or below the view
+    const fw = camera.getWorldDirection(tmpGuide); const fx = fw.x, fz = fw.z, fl = Math.hypot(fx, fz) || 1;
+    const rx = tx - camera.position.x, rz = tz - camera.position.z;
+    const ahead = (rx * fx + rz * fz) / fl, right = (rx * -fz + rz * fx) / fl;
+    const a = Math.atan2(right, ahead); const r = Math.min(innerWidth, innerHeight) * 0.3;
+    x = innerWidth / 2 + Math.sin(a) * r; y = innerHeight / 2 - Math.cos(a) * r; ang = a * 180 / Math.PI; }
   // glowing dots flowing along the ground toward the target
   const dx = tx - player.pos.x, dz = tz - player.pos.z; const step = 1.6; const n = Math.min(TRAIL_N, Math.floor(dist / step));
   for (let i = 0; i < TRAIL_N; i++) {
