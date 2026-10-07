@@ -1352,7 +1352,7 @@ function update(dt) {
   // forging
   if (G.forging) {
     G.forging += dt; const o = G.forgeEl; emit(new THREE.Vector3(FURNACE_POS.x, G.furnace.y + 2.6, FURNACE_POS.y), Math.random() < 0.5 ? 0xffa040 : o.el.color, 6, 2.5, 3, 1.2);
-    o.stone.position.set(FURNACE_POS.x, G.furnace.y + 3 + G.forging * 0.6, FURNACE_POS.y); o.stone.rotation.y += dt * 6;
+    o.stone.position.set(FURNACE_POS.x, G.furnace.y + (CFG.world?.furnaceSize ?? 3) + 0.4 + G.forging * 0.6, FURNACE_POS.y); o.stone.rotation.y += dt * 6;
     G.furnace.fire.intensity = 60 + Math.sin(G.t * 40) * 30 + G.forging * 60;
     if (G.forging > 1.6) { G.forging = 0; G.forgeEl = null; forgeDone(o); }
   } else if (G.furnace) { G.furnace.fire.intensity = 50 + Math.sin(G.t * 9) * 12; if (Math.random() < dt * 14) emit(new THREE.Vector3(FURNACE_POS.x + (Math.random() - .5), G.furnace.y + 2.4, FURNACE_POS.y + (Math.random() - .5)), 0xff9a3c, 1, 0.6, 1.6, 1.6); }
@@ -1526,7 +1526,7 @@ function throwRing(on) {
 function guideBeams(target) {
   if (!furnaceBeam && G.furnace) { const src = G.ores[0].beam; furnaceBeam = new THREE.Mesh(src.geometry, src.material.clone()); furnaceBeam.material.uniforms.uCol.value = new THREE.Color(0xffd27a);
     const bm = furnaceBeam.material; furnaceBeam.onBeforeRender = (r, sc, cam) => { bm.uniforms.uOp.value = bm.opacity; bm.uniforms.uT.value = G.t; furnaceBeam.rotation.y = Math.atan2(cam.position.x - furnaceBeam.position.x, cam.position.z - furnaceBeam.position.z); }; scene.add(furnaceBeam); }
-  if (furnaceBeam) { furnaceBeam.position.set(FURNACE_POS.x, G.furnace.y + 30, FURNACE_POS.y); furnaceBeam.visible = target === 'furnace'; furnaceBeam.material.opacity = 0.55 + 0.15 * Math.sin(G.t * 4); }
+  if (furnaceBeam) { furnaceBeam.position.set(FURNACE_POS.x, G.furnace.y + 30, FURNACE_POS.y); furnaceBeam.visible = target === 'furnace'; furnaceBeam.material.opacity = (0.55 + 0.15 * Math.sin(G.t * 4)) * THREE.MathUtils.smoothstep(furnaceDist(), THROW_R(), THROW_R() + 8); } // fades out once you are close enough to throw
   G.guideTarget = target;
 }
 function updateGuide() {
@@ -1541,6 +1541,7 @@ function updateGuide() {
     tx = best.home.x; tz = best.home.z; ty = best.home.y + 1.6; label = `${best.el.zh}石 · ${best.el.en}`;
   }
   guideBeams(G.carrying ? 'furnace' : G.ores.find(o => o.home.x === tx && o.home.z === tz));
+  if (G.carrying && canThrow()) { g.hidden = true; trail.visible = false; throwRing(true); return; } // in range and facing it: the prompt says it all
   const dist = Math.hypot(tx - player.pos.x, tz - player.pos.z);
   gV.set(tx, ty, tz).project(camera);
   throwRing(!!G.carrying);
