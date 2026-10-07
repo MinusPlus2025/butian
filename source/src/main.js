@@ -1565,7 +1565,7 @@ const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2,
 
 function win() {
   if (G.phase !== 'play') return;
-  G.phase = 'won'; G.endT = 0; G.healR = 999; showWorldB(); for (let k = 1; k < 8; k++) G['fin' + k] = 0; G.ores.forEach(o => { o.beam.visible = false; o.light.visible = false; }); $('hud').hidden = true; $('keys') && ($('keys').hidden = true); say('天，合上了。人间，回来了。 · The sky is whole. The world returns.', 6000); document.exitPointerLock?.();
+  G.phase = 'won'; G.endT = 0; G.healR = 999; G.runTime = G.t - G.t0; showWorldB(); for (let k = 1; k < 8; k++) G['fin' + k] = 0; G.ores.forEach(o => { o.beam.visible = false; o.light.visible = false; }); $('hud').hidden = true; $('keys') && ($('keys').hidden = true); say('天，合上了。人间，回来了。 · The sky is whole. The world returns.', 6000); document.exitPointerLock?.();
   $('prompt').classList.remove('on'); $('act').hidden = true; endingMusic(true);
   EL.forEach((e, i) => pluck(e.note, 5, 0.16, i * 0.35)); EL.forEach(e => pluck(e.note / 2, 6, 0.1, 2));
   crackSegs.forEach(s => { s.mended = 1; emit(s.center, 0xfff2c0, 120, 12, 0, 3); }); flash(0xfff2c0); if (droneG) droneG.gain.linearRampToValueAtTime(0.09, AC.currentTime + 4);
@@ -1574,7 +1574,9 @@ function win() {
   }, 2500 + i * 180));
   // the end card waits on the finale's own clock, so slow machines still see every beat
   const iv = setInterval(() => { if (G.phase !== 'won') return clearInterval(iv); if (G.endT < (TP ? 42 : 12)) return; clearInterval(iv); (() => {
-    $('end-time').textContent = fmt(G.t - G.t0); $('end-miss').textContent = G.mistakes;
+    const rt = G.runTime ?? (G.t - G.t0), best = readBest(), isNew = !DEMO && (!best || rt < best);
+    if (isNew) { try { localStorage.setItem(BEST_KEY, String(rt)); } catch (e) {} }
+    $('end-time').textContent = fmt(rt) + (isNew && best ? L('　比以往更快 · Faster than ever') : ''); $('end-best').textContent = isNew ? fmt(rt) : best ? fmt(best) : '—'; $('end-miss').textContent = G.mistakes;
     $('end-order').textContent = G.chain.map(k => EL.find(e => e.key === k).zh).join(' → ');
     const E = $('end'); E.classList.remove('show'); E.style.opacity = 0; E.hidden = false; G.endShowT = G.endT;
   })(); }, 200);
@@ -1587,7 +1589,17 @@ function lose() {
   setTimeout(() => { if (G.phase === 'lost') { $('lose').hidden = false; $('drown').style.opacity = 0; } }, 6500);
 }
 
+// every run deals the five stones to the five hollows in a new order, so the route is never the same twice
+function shuffleOres() {
+  const R = CFG.world?.regions; if (!R || DEMO) return;
+  const idx = R.map((_, i) => i); for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+  G.ores.forEach(o => { const i = EL.indexOf(o.el), [x, z] = R[idx[i]], y = groundFn(x, z);
+    o.el.pos = [x, z]; U.uReg.value[i].set(x, 0, z, CFG.world.regionR || REGION_R); o.home.set(x, y, z); o.beam.position.set(x, y + 30, z); o.light.position.set(x, y + 2, z); });
+}
+const BEST_KEY = 'butian.best';
+function readBest() { try { const v = +localStorage.getItem(BEST_KEY); return v > 0 ? v : null; } catch (e) { return null; } }
 function resetGame() {
+  shuffleOres();
   heldHide(); gems.forEach(m => scene.remove(m)); gems.length = 0; if (G.furnace) G.furnace.ember.material.color.set(0xff7a20); flights.forEach(f => f.obj.parent && scene.remove(f.obj)); flights.length = 0;
   $('drown').style.opacity = 0; endingMusic(false); $('giftseal').hidden = true; G.paused = false; $('pause').hidden = true; G.tut = 0; $('guide').hidden = false;
   G.phase = 'play'; G.qT = 12; G.water = CFG.world?.water?.water ?? -2.6; G.rate = CFG.world?.water?.rate ?? 0.034; G.carrying = null; G.forging = 0; G.forgeEl = null;
