@@ -1617,7 +1617,8 @@ function updateGuide() {
     tx = best.home.x; tz = best.home.z; ty = best.home.y + 1.6; label = `${best.el.zh}石 · ${best.el.en}`;
   }
   guideBeams(G.carrying ? 'furnace' : G.ores.find(o => o.home.x === tx && o.home.z === tz));
-  if (G.carrying && canThrow()) { g.hidden = true; trail.visible = false; throwRing(true); return; } // in range and facing it: the prompt says it all
+  if (G.carrying && canThrow()) { g.hidden = true; trail.visible = false; throwRing(true); return; }
+  if (!G.carrying && nearestOreTP()) { g.hidden = true; trail.visible = false; throwRing(false); return; } // close enough to pick up: the reticle's label takes over, no second label on top of it // in range and facing it: the prompt says it all
   const dist = Math.hypot(tx - player.pos.x, tz - player.pos.z);
   gV.set(tx, ty, tz).project(camera);
   throwRing(!!G.carrying);
@@ -1678,7 +1679,7 @@ function lose() {
 
 // every run deals the five stones to the five hollows in a new order, so the route is never the same twice
 function shuffleOres() {
-  const R = CFG.world?.regions; if (!R || DEMO) return;
+  const R = CFG.world?.regions; if (!R) return;
   const idx = R.map((_, i) => i); for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
   G.ores.forEach(o => { const i = EL.indexOf(o.el), [x, z] = R[idx[i]], y = groundFn(x, z);
     o.el.pos = [x, z]; U.uReg.value[i].set(x, 0, z, CFG.world.regionR || REGION_R); o.home.set(x, y, z); o.beam.position.set(x, y + 30, z); o.light.position.set(x, y + 2, z); });
@@ -1694,7 +1695,8 @@ function resetGame() {
   for (const o of G.ores) { o.taken = false; o.used = false; o.stone.visible = true; o.stone.scale.setScalar(1); o.stone.position.copy(o.home); o.beam.visible = true; o.light.visible = true; }
   crackSegs.forEach(s => { s.mended = 0; s.el = null; s.mesh.material.color.set(0xfff6e0); if (s.rib) s.rib.parts.forEach(pp => { pp.core.material.color.set(0xffe2b0); pp.glow.material.color.set(0xff4a20); }); });
   G.villagers.forEach(v => v.visible = false); G.cut = false; AV.fly = null; AV.camInit = false; nuwaBody.scale.setScalar(1); if (G.nuwaFade) { G.nuwaFade.forEach(([m, tr, o]) => { m.transparent = tr; m.opacity = o; }); G.nuwaFade = null; } nuwaBody.position.y = 0; if (G.fuse) { scene.remove(G.fuse.orb); G.fuse = null; } pillars.splice(0).forEach(p => scene.remove(p.m)); birds.forEach(b => b.g.visible = false); if (G.nuwaGlow) G.nuwaGlow.intensity = 0; if (worldB) { worldB.visible = false; water.visible = true; if (splatMesh) splatMesh.visible = true; if (G.furnace) G.furnace.obj.visible = true; }
-  player.pos.set(START_POS.x, groundFn(START_POS.x, START_POS.y), START_POS.y); player.yaw = 0; player.pitch = 0.12;
+  { const S = CFG.world?.starts; if (S && S.length) { const [sx, sz] = S[Math.floor(Math.random() * S.length)]; START_POS.set(sx, sz); } } // a different place in the valley each time
+  player.pos.set(START_POS.x, groundFn(START_POS.x, START_POS.y), START_POS.y); player.yaw = Math.atan2(-(FURNACE_POS.x - START_POS.x), -(FURNACE_POS.y - START_POS.y)); player.pitch = 0.12; // facing the distant furnace
   G.endShowT = null; $('end').style.opacity = ''; $('end').hidden = true; $('lose').hidden = true; $('intro').hidden = true; $('hud').hidden = false;
   G.n50 = G.n80 = 0; hudRing(); say(TP ? '第一步：跟着金色光点走到发光的石头旁，按 E 或左键拾起 · Follow the golden dots to a glowing stone, then press E or click' : '第一步：跟着金色光点找到原石，点击抓起 · Follow the golden lights and grab an ore', 7000);
 }
