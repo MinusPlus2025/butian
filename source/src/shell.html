@@ -84,7 +84,7 @@ button.big:focus-visible, #act:focus-visible { outline: 2px solid var(--seal); o
 #banner i { font: italic 1.1rem var(--latin); color: var(--paper); text-shadow: 0 1px 3px #000; }
 #banner.go { animation: bn 1.8s ease-out; }
 @keyframes bn { 0% { opacity: 0; transform: translate(-50%,-50%) scale(1.8); } 12% { opacity: 1; transform: translate(-50%,-50%) scale(1); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%,-60%) scale(1); } }
-#guide-text { font-size: .78rem; color: #ffe9a8; text-shadow: 0 1px 3px #000; white-space: nowrap; }
+#guide-text { font-size: 1rem; color: #ffe9a8; text-shadow: 0 1px 3px #000; white-space: nowrap; }
 #pausebtn { position: absolute; right: 16px; top: calc(52px + env(safe-area-inset-top, 0px)); pointer-events: auto; background: rgba(20,22,26,.55); color: var(--paper); border: 1px solid var(--paper-dim); border-radius: 2px; font: .85rem var(--serif); padding: .35rem .7rem; cursor: pointer; }
 .howto { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; counter-reset: s; }
 .howto li { display: grid; grid-template-columns: 1.8rem 1fr; align-items: start; font-size: .98rem; }
@@ -153,7 +153,7 @@ body[data-lang="zh"] #giftseal small { display: none; }
 <div id="drown"></div>
 <div id="giftseal" hidden><div class="bigseal">礼</div><p><span class="zh-t">这个世界，是女娲留给人间的礼物</span><small class="en-t">This world is Nüwa's gift to us</small></p></div>
 <div id="banner"><b></b><i></i></div>
-<div id="guide" hidden><svg id="guide-arrow" viewBox="0 0 48 48" width="44" height="44"><defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6c8"/><stop offset="1" stop-color="#f0a020"/></linearGradient></defs><path d="M24 3 L44 40 L24 31 L4 40 Z" fill="url(#ga)" stroke="#5a2e00" stroke-width="2.5" stroke-linejoin="round"/></svg><div id="guide-text"></div></div>
+<div id="guide" hidden><svg id="guide-arrow" viewBox="0 0 48 48" width="64" height="64"><defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6c8"/><stop offset="1" stop-color="#f0a020"/></linearGradient></defs><path d="M24 3 L44 40 L24 31 L4 40 Z" fill="url(#ga)" stroke="#5a2e00" stroke-width="2.5" stroke-linejoin="round"/></svg><div id="guide-text"></div></div>
 
 <div id="hud" hidden>
   <div id="ring">

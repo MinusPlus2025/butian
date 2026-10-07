@@ -1342,7 +1342,7 @@ function update(dt) {
       else { o.stone.position.copy(hp); o.stone.scale.setScalar((FPV && !AV.fly ? (CFG.world?.hand?.holdScale ?? 0.11) : TP ? 0.38 : CFG.world?.hand?.holdScale ?? 0.16)); if (TP && Math.random() < dt * 20) emit(hp, o.el.color, 1, 0.3, 0.4, 0.6); }
       o.stone.rotation.y += dt;
       if (FPV && !AV.fly && G.grabT >= 1) { heldShow(o); o.stone.visible = false; G.held.g.rotation.y += dt * 0.6; } else if (G.held) { heldHide(); o.stone.visible = true; }
-    } else if (!o.taken) { setOnTop(o, false); const hv = o === G.hover; o.stone.rotation.y += dt * (hv ? 2.2 : 0.5); o.stone.position.y = o.home.y + Math.sin(G.t * 1.6 + o.home.x) * 0.15 + (hv ? 0.25 : 0); o.stone.scale.setScalar(THREE.MathUtils.lerp(o.stone.scale.x, hv ? 1.18 + Math.sin(G.t * 8) * 0.04 : 1, Math.min(1, dt * 10))); o.beam.material.opacity = hv ? 0.42 : 0.16 + Math.sin(G.t * 2 + o.home.z) * 0.06; if (Math.random() < dt * 5) emit(tmpA.set(o.home.x + (Math.random() - 0.5) * 0.8, o.home.y + 0.3, o.home.z + (Math.random() - 0.5) * 0.8), o.el.color, 1, 0.15, 3, 2.2); }
+    } else if (!o.taken) { setOnTop(o, false); const hv = o === G.hover; o.stone.rotation.y += dt * (hv ? 2.2 : 0.5); o.stone.position.y = o.home.y + Math.sin(G.t * 1.6 + o.home.x) * 0.15 + (hv ? 0.25 : 0); o.stone.scale.setScalar(THREE.MathUtils.lerp(o.stone.scale.x, hv ? 1.18 + Math.sin(G.t * 8) * 0.04 : 1, Math.min(1, dt * 10))); o.beam.material.opacity = o === G.guideTarget ? 0.6 + 0.15 * Math.sin(G.t * 4) : hv ? 0.42 : 0.1 + Math.sin(G.t * 2 + o.home.z) * 0.04; if (Math.random() < dt * 5) emit(tmpA.set(o.home.x + (Math.random() - 0.5) * 0.8, o.home.y + 0.3, o.home.z + (Math.random() - 0.5) * 0.8), o.el.color, 1, 0.15, 3, 2.2); }
   }
   // forging
   if (G.forging) {
@@ -1510,17 +1510,25 @@ const gV = new THREE.Vector3(), tmpGuide = new THREE.Vector3();
 const TRAIL_N = 40;
 const trail = new THREE.InstancedMesh(new THREE.SphereGeometry(0.18, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffd060, transparent: true, opacity: 0.9, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }), TRAIL_N);
 trail.frustumCulled = false; scene.add(trail); const tM = new THREE.Matrix4();
+let furnaceBeam = null;
+function guideBeams(target) {
+  if (!furnaceBeam && G.furnace) { const src = G.ores[0].beam; furnaceBeam = new THREE.Mesh(src.geometry, src.material.clone()); furnaceBeam.material.uniforms.uCol.value = new THREE.Color(0xffd27a);
+    const bm = furnaceBeam.material; furnaceBeam.onBeforeRender = (r, sc, cam) => { bm.uniforms.uOp.value = bm.opacity; bm.uniforms.uT.value = G.t; furnaceBeam.rotation.y = Math.atan2(cam.position.x - furnaceBeam.position.x, cam.position.z - furnaceBeam.position.z); }; scene.add(furnaceBeam); }
+  if (furnaceBeam) { furnaceBeam.position.set(FURNACE_POS.x, G.furnace.y + 30, FURNACE_POS.y); furnaceBeam.visible = target === 'furnace'; furnaceBeam.material.opacity = 0.55 + 0.15 * Math.sin(G.t * 4); }
+  G.guideTarget = target;
+}
 function updateGuide() {
   const g = $('guide');
-  if (G.phase !== 'play' || G.forging) { g.hidden = true; trail.visible = false; return; }
+  if (G.phase !== 'play' || G.forging) { g.hidden = true; trail.visible = false; guideBeams(null); if (furnaceBeam) furnaceBeam.visible = false; return; }
   let tx, tz, label;
   if (G.carrying) { tx = FURNACE_POS.x; tz = FURNACE_POS.y; label = '铜炉 · Furnace'; }
   else {
     const need = G.chain.length ? NEXT[G.chain[G.chain.length - 1]] : null; let bd = 1e9, best = null;
     for (const o of G.ores) { if (o.taken || o.used || (need && o.el.key !== need)) continue; const d = Math.hypot(o.home.x - player.pos.x, o.home.z - player.pos.z); if (d < bd) { bd = d; best = o; } }
-    if (!best) { g.hidden = true; trail.visible = false; return; }
+    if (!best) { g.hidden = true; trail.visible = false; guideBeams(null); return; }
     tx = best.home.x; tz = best.home.z; label = `${best.el.zh}石 · ${best.el.en}`;
   }
+  guideBeams(G.carrying ? 'furnace' : G.ores.find(o => o.home.x === tx && o.home.z === tz));
   const dist = Math.hypot(tx - player.pos.x, tz - player.pos.z);
   gV.set(tx, groundFn(tx, tz) + 2, tz).project(camera);
   const on = gV.z < 1 && Math.abs(gV.x) < 0.85 && Math.abs(gV.y) < 0.85;
