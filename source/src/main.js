@@ -230,11 +230,12 @@ async function buildSplatWorld(W) {
   const uRes5 = new dyno.DynoVec4({ value: new THREE.Vector4() });   // x: region 5, y: all, z: crack 5 mended
   const uMend = new dyno.DynoVec4({ value: new THREE.Vector4() });   // crack 1-4 mended
   const uAnim = new dyno.DynoVec4({ value: new THREE.Vector4() });   // x: time, y: flood surface height
+  const uRevA = new dyno.DynoVec4({ value: new THREE.Vector4(0, 0, 0, -1) }); // the mended world's light front: centre, radius
   const mod = dyno.dynoBlock({ gsplat: dyno.Gsplat }, { gsplat: dyno.Gsplat }, ({ gsplat }) => {
     const d = new dyno.Dyno({
-      inTypes: { gsplat: dyno.Gsplat, r0: 'vec4', r1: 'vec4', r2: 'vec4', r3: 'vec4', r4: 'vec4', c0: 'vec4', c1: 'vec4', c2: 'vec4', c3: 'vec4', c4: 'vec4', ra: 'vec4', rb: 'vec4', mm: 'vec4', an: 'vec4' },
+      inTypes: { gsplat: dyno.Gsplat, r0: 'vec4', r1: 'vec4', r2: 'vec4', r3: 'vec4', r4: 'vec4', c0: 'vec4', c1: 'vec4', c2: 'vec4', c3: 'vec4', c4: 'vec4', ra: 'vec4', rb: 'vec4', mm: 'vec4', an: 'vec4', rv: 'vec4' },
       outTypes: { gsplat: dyno.Gsplat },
-      inputs: { gsplat, r0: uRegD[0], r1: uRegD[1], r2: uRegD[2], r3: uRegD[3], r4: uRegD[4], c0: uCrk[0], c1: uCrk[1], c2: uCrk[2], c3: uCrk[3], c4: uCrk[4], ra: uResD, rb: uRes5, mm: uMend, an: uAnim },
+      inputs: { gsplat, r0: uRegD[0], r1: uRegD[1], r2: uRegD[2], r3: uRegD[3], r4: uRegD[4], c0: uCrk[0], c1: uCrk[1], c2: uCrk[2], c3: uCrk[3], c4: uCrk[4], ra: uResD, rb: uRes5, mm: uMend, an: uAnim, rv: uRevA },
       statements: ({ inputs, outputs }) => dyno.unindentLines(`
         ${outputs.gsplat} = ${inputs.gsplat};
         vec4 regs[5] = vec4[5](${inputs.r0}, ${inputs.r1}, ${inputs.r2}, ${inputs.r3}, ${inputs.r4});
@@ -289,24 +290,33 @@ async function buildSplatWorld(W) {
         outc = mix(outc, mix(vec3(1.0, 0.9, 0.7), molten, 0.45) * 1.6, fr * 0.85);
         outc = mix(outc, mix(vec3(0.7, 0.76, 0.84), vec3(0.86, 0.84, 0.8), m), hk);
         op *= 1.0 - hk * 0.6;
+        // after the mend a front of light spreads from the sealed rift; the broken world dissolves behind it
+        if (${inputs.rv}.w > 0.0) {
+          float dr = distance(p, ${inputs.rv}.xyz) - ${inputs.rv}.w;
+          outc = mix(outc, vec3(1.0, 0.88, 0.62) * 1.25, (1.0 - smoothstep(0.0, ${REV_W.toFixed(1)}, abs(dr + ${(REV_W*0.6).toFixed(1)}))) * 0.75);
+          op *= smoothstep(-${REV_W.toFixed(1)}, -${(REV_W*0.2).toFixed(1)}, dr);
+        }
         ${outputs.gsplat}.rgba = vec4(outc, op);
       `),
     });
     return { gsplat: d.outputs.gsplat };
   });
-  splatMesh = new SplatMesh({ fileBytes: await loadBin(W.spz), fileType: 'spz', worldModifier: mod });
-  if (W.transform) {
-    const t = W.transform; if (t.position) splatMesh.position.fromArray(t.position);
-    splatMesh.quaternion.fromArray(t.quaternion || [1, 0, 0, 0]); if (t.scale) splatMesh.scale.setScalar(t.scale);
-  } else splatMesh.quaternion.set(1, 0, 0, 0); // Marble exports are OpenCV-style (y down)
+  const place = m => { if (W.transform) { const t = W.transform; if (t.position) m.position.fromArray(t.position); m.quaternion.fromArray(t.quaternion || [1, 0, 0, 0]); if (t.scale) m.scale.setScalar(t.scale); } else m.quaternion.set(1, 0, 0, 0); return m; }; // Marble exports are OpenCV-style (y down)
+  splatMesh = place(new SplatMesh({ fileBytes: await loadBin(W.spz), fileType: 'spz', worldModifier: mod }));
   scene.add(splatMesh);
+  REV_SYNC.push(v => uRevA.value.copy(v));
   splatMesh.__sync = () => {
     EL.forEach((e, i) => uRegD[i].value.copy(U.uReg.value[i]));
     const r = U.uRes.value; const cm = crackSegs.map(c => c.mended);
     uResD.value.set(r[0], r[1], r[2], r[3]); uRes5.value.set(r[4], U.uAll.value, cm[4], Math.min(1.4, boltFlash)); uAnim.value.set(G.t, CFG.world?.floodTop ?? 0.5, G.healR || 0, crackSegs[2] ? crackSegs[2].center.z : 0); uMend.value.set(cm[0], cm[1], cm[2], cm[3]);
     splatMesh.updateVersion();
   };
-  await splatMesh.initialized; loadWorldB();
+  await splatMesh.initialized;
+  // a light world opens the game fast; the full-density valley streams in behind it and takes over unnoticed, then the mended world
+  (async () => {
+    if (W.spzHi) try { const hi = place(new SplatMesh({ fileBytes: await loadBin(W.spzHi), fileType: 'spz', worldModifier: mod })); await hi.initialized; const lo = splatMesh; hi.visible = lo.visible; hi.__sync = lo.__sync; splatMesh = hi; scene.add(hi); hi.updateVersion(); setTimeout(() => { scene.remove(lo); lo.dispose?.(); }, 400); } catch (e) { console.warn('hi-res world failed', e); }
+    loadWorldB();
+  })();
   if (W.collider) {
     const g = await loadGLB(W.collider);
     if (g) {
@@ -384,14 +394,15 @@ const waterMat = patchMat(new THREE.MeshStandardMaterial({ color: 0x9c8670, roug
 // rolling flood: three wave trains displace the surface on the GPU; flat shading lets the light catch every crest
 const waterT = { value: 0 };
 waterMat.flatShading = false;
-{ const base = waterMat.onBeforeCompile; waterMat.onBeforeCompile = sh => { base(sh); sh.uniforms.uWT = waterT;
-  sh.vertexShader = 'uniform float uWT;\nvarying float vCrest;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+{ const base = waterMat.onBeforeCompile; waterMat.onBeforeCompile = sh => { base(sh); sh.uniforms.uWT = waterT; sh.uniforms.uRev = { get value() { return REV; } };
+  sh.vertexShader = 'uniform float uWT;\nvarying float vCrest;\nvarying vec3 vRw;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
     float wx = position.x, wz = position.z;
     // the flood pours down the valley (+z): a fast travelling surge plus cross chop
     float surge = 0.22 * sin(wz * 0.55 - uWT * 3.4 + sin(wx * 0.35) * 1.5) + 0.1 * sin(wz * 1.3 - uWT * 5.2 + wx * 0.4);
     float chop = 0.12 * sin(wx * 0.45 + uWT * 1.3) + 0.05 * sin((wx + wz) * 1.6 + uWT * 3.1);
-    transformed.y += surge + chop; vCrest = surge + chop;`);
-  sh.fragmentShader = 'varying float vCrest;\n' + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+    transformed.y += surge + chop; vCrest = surge + chop; vRw = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+  sh.fragmentShader = 'varying float vCrest;\nvarying vec3 vRw;\nuniform vec4 uRev;\n' + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+    if (uRev.w > 0.0) { float dr = distance(vRw, uRev.xyz) - uRev.w; diffuseColor.a *= smoothstep(-${REV_W.toFixed(1)}, -${(REV_W*0.2).toFixed(1)}, dr); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.9, 0.7), 1.0 - smoothstep(0.0, ${REV_W.toFixed(1)}, abs(dr + ${(REV_W*0.6).toFixed(1)}))); }
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.8, 0.74, 0.64), smoothstep(0.24, 0.4, vCrest) * 0.45);`); }; }
 const water = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600, 1, 1).rotateX(-Math.PI / 2), waterMat);
 scene.add(water);
@@ -1148,7 +1159,7 @@ function nuwaFlightAll(f, i, dt) {
     if (f.obj.parent) scene.remove(f.obj); G.healR = reach + 30;
     crackSegs.forEach(s => { if (!s.mended) s.mended = 0.001; });
     const k = (A.t - tSpread) / hold; seam.scale.setScalar(1); seam.visible = k < 0.95; seamRock.uniforms.uA.value = 1 - k * k;
-    if (!f.cooled && k > 0.3) { f.cooled = 1; whiteout(showWorldB); EL.forEach((e, n) => pluck(e.note, 4, 0.12, n * 0.12)); }
+    if (!f.cooled && k > 0.3) { f.cooled = 1; reviveWorld(mid); }
     avatar.position.y += Math.sin(A.t * 2) * 0.003; if (!f.top) f.top = avatar.position.clone();
   } else {
     if (seam) { scene.remove(seam); seam.geometry.dispose(); seam = null; }
@@ -1288,11 +1299,43 @@ function finaleTick(dt) {
   if (t > 38 && nuwaBody.visible && G.nuwaFade) nuwaBody.visible = false;
 }
 let worldB = null;
+const REV = new THREE.Vector4(0, 0, 0, -1), REV_SYNC = [], REV_W = 9, REV_T = 7, REV_MAX = 150;
 // the mended world: same valley, whole sky, no flood
-function showWorldB() { if (!worldB || worldB.visible) return; worldB.visible = true; water.visible = false; if (splatMesh) splatMesh.visible = false; if (G.furnace) G.furnace.obj.visible = false; G.villagers.forEach(v => v.visible = false); }
+function showWorldB() { if (!worldB || (worldB.visible && !G.rev?.live)) return; if (G.rev) G.rev.live = false; REV.set(0, 0, 0, -1); REV_SYNC.forEach(f => f(REV)); worldB.visible = true; water.visible = false; if (splatMesh) splatMesh.visible = false; if (G.furnace) G.furnace.obj.visible = false; G.villagers.forEach(v => v.visible = false); }
+// the mend spreads: a sphere of light grows from the sealed rift, the green valley forms inside it and the grey one falls away outside
+function reviveWorld(c) {
+  if (!worldB) { whiteout(showWorldB); return; }
+  G.rev = { t: 0, c: c.clone(), live: true }; worldB.visible = true;
+  glow(0.4, 0.5, 2.6); EL.forEach((e, n) => pluck(e.note, 4, 0.12, n * 0.12)); EL.forEach((e, n) => bell(e.note * 2, 3, 0.04, 0.8 + n * 0.25));
+}
+function updateRevive(dt) {
+  const R = G.rev; if (!R || !R.live) return;
+  R.t += dt; const k = Math.min(1, R.t / REV_T), r = 2 + REV_MAX * Math.pow(k, 1.7);
+  REV.set(R.c.x, R.c.y, R.c.z, r); REV_SYNC.forEach(f => f(REV));
+  const passed = o => o.visible && o.getWorldPosition(tmpV).distanceTo(R.c) < r - REV_W * 0.5;
+  if (G.furnace && passed(G.furnace.obj)) { G.furnace.obj.visible = false; emit(G.furnace.obj.position.clone().add(tmpB.set(0, 1, 0)), 0xffe6b0, 60, 3, 1.5, 2.5); }
+  G.villagers.forEach(v => { if (passed(v)) { v.visible = false; emit(v.position.clone().add(tmpB.set(0, 0.8, 0)), 0xfff2c0, 20, 1.2, 1.2, 2); } });
+  if (k >= 1) showWorldB();
+}
+function glow(op, tin, tout) { const el = document.getElementById('flash'); el.classList.remove('go'); el.style.background = '#fff4dc'; el.style.transition = `opacity ${tin}s ease-in`; el.style.opacity = 0; void el.offsetWidth; el.style.opacity = op;
+  setTimeout(() => { el.style.transition = `opacity ${tout}s ease-out`; el.style.opacity = 0; setTimeout(() => { el.style.transition = ''; el.style.opacity = ''; }, tout * 1000 + 100); }, tin * 1000); }
 async function loadWorldB() {
   const W = CFG.world; if (!W?.spzB) return;
-  try { worldB = new SplatMesh({ fileBytes: await loadBin(W.spzB), fileType: 'spz' }); const t = W.transformB || W.transform || {}; if (t.position) worldB.position.fromArray(t.position); worldB.quaternion.fromArray(t.quaternion || [1, 0, 0, 0]); if (t.scale) worldB.scale.setScalar(t.scale); worldB.visible = false; scene.add(worldB); }
+  const uRevB = new dyno.DynoVec4({ value: new THREE.Vector4(0, 0, 0, -1) });
+  const modB = dyno.dynoBlock({ gsplat: dyno.Gsplat }, { gsplat: dyno.Gsplat }, ({ gsplat }) => {
+    const d = new dyno.Dyno({ inTypes: { gsplat: dyno.Gsplat, rv: 'vec4' }, outTypes: { gsplat: dyno.Gsplat }, inputs: { gsplat, rv: uRevB },
+      statements: ({ inputs, outputs }) => dyno.unindentLines(`
+        ${outputs.gsplat} = ${inputs.gsplat};
+        if (${inputs.rv}.w > 0.0) {
+          float dr = distance(${inputs.gsplat}.center, ${inputs.rv}.xyz) - ${inputs.rv}.w;
+          vec3 c = ${inputs.gsplat}.rgba.rgb;
+          c = mix(c, c * 1.35 + vec3(0.25, 0.22, 0.1), 1.0 - smoothstep(0.0, ${REV_W.toFixed(1)}, abs(dr + ${(REV_W*0.6).toFixed(1)})));
+          ${outputs.gsplat}.rgba = vec4(c, ${inputs.gsplat}.rgba.a * (1.0 - smoothstep(-${(REV_W*0.8).toFixed(1)}, 0.0, dr)));
+        }
+      `) });
+    return { gsplat: d.outputs.gsplat };
+  });
+  try { worldB = new SplatMesh({ fileBytes: await loadBin(W.spzB), fileType: 'spz', worldModifier: modB }); REV_SYNC.push(v => { uRevB.value.copy(v); worldB.updateVersion(); }); const t = W.transformB || W.transform || {}; if (t.position) worldB.position.fromArray(t.position); worldB.quaternion.fromArray(t.quaternion || [1, 0, 0, 0]); if (t.scale) worldB.scale.setScalar(t.scale); worldB.visible = false; scene.add(worldB); }
   catch (e) { console.warn('world B failed', e); worldB = null; }
 }
 // ---------- loop ----------
@@ -1313,7 +1356,7 @@ function update(dt) {
   water.position.y = G.water; updateQuake(dt);
   const W0 = CFG.world?.water?.water ?? -2.6; const fl = THREE.MathUtils.clamp((G.water - W0) / (G.failLevel - W0), 0, 1);
   $('flood-fill').style.height = (fl * 100).toFixed(1) + '%';
-  waterMat.opacity = (0.18 + 0.77 * Math.pow(fl, 1.3)) * (G.phase === 'won' ? Math.max(0, 1 - G.endT / 3) : 1); water.visible = !(G.phase === 'won' && G.endT > 3) && !(worldB && worldB.visible); // low water stays a thin sheen over the world's own torrent; deep water turns opaque
+  waterMat.opacity = (0.18 + 0.77 * Math.pow(fl, 1.3)) * (G.phase === 'won' ? Math.max(0, 1 - G.endT / 3) : 1); water.visible = !(G.phase === 'won' && G.endT > 3) && !(worldB && worldB.visible && !G.rev?.live); // low water stays a thin sheen over the world's own torrent; deep water turns opaque
   $('flood').classList.toggle('danger', fl > 0.75);
   if (floodGain) floodGain.gain.value = G.phase === 'play' ? 0.04 + fl * 0.35 : 0;
   updateGuide();
@@ -1480,6 +1523,7 @@ function update(dt) {
   skyMat.uniforms.uSat.value = Math.max(prog * 0.75, U.uAll.value);
   scene.fog.color.lerpColors(new THREE.Color(0xb9bcc0), new THREE.Color(0xf1d9bc), skyMat.uniforms.uSat.value);
   if (splatMesh && splatMesh.__sync) splatMesh.__sync();
+  updateRevive(dt);
   if (windGain) windGain.gain.value = 0.03 + fl * 0.09;
 
   // villagers on win
@@ -1537,7 +1581,7 @@ function updateAmbience(dt) {
   waterT.value = G.t;
   updateBolts(dt); updateGems(dt);
   rainInit();
-  const amt = G.phase === 'won' ? 0 : 1 - (G.chain?.length || 0) / 6; rain.material.opacity = 0.55 * amt; if (rainEl) rainEl.volume = Math.min(1, 0.7 * amt); if (rainHiss) rainHiss.gain.value = 0.3 * amt; if (!rainEl && !G.rainSynth && AC && amt > 0.05 && G.phase !== 'title') for (let k = 0; k < 2; k++) if (Math.random() < dt * 18 * amt) noiseBurst(0.03, 1500 + Math.random() * 3000, 800, 0.05 + Math.random() * 0.06, 'bandpass', Math.random() * 0.05); rain.visible = amt > 0.02;
+  const amt = G.phase === 'won' ? 0 : (1 - (G.chain?.length || 0) / 6) * (G.rev ? Math.max(0, 1 - G.rev.t / 2) : 1); rain.material.opacity = 0.55 * amt; if (rainEl) rainEl.volume = Math.min(1, 0.7 * amt); if (rainHiss) rainHiss.gain.value = 0.3 * amt; if (!rainEl && !G.rainSynth && AC && amt > 0.05 && G.phase !== 'title') for (let k = 0; k < 2; k++) if (Math.random() < dt * 18 * amt) noiseBurst(0.03, 1500 + Math.random() * 3000, 800, 0.05 + Math.random() * 0.06, 'bandpass', Math.random() * 0.05); rain.visible = amt > 0.02;
   const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
   for (let i = 0; i < RAIN_N; i++) {
     const r = rainSeed[i]; r[1] -= r[3] * dt; if (r[1] < -4) { r[1] = 20 + Math.random() * 5; r[0] = Math.random() * 40 - 20; r[2] = Math.random() * 40 - 20; }
@@ -1653,7 +1697,7 @@ const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2,
 
 function win() {
   if (G.phase !== 'play') return;
-  G.phase = 'won'; G.endT = 0; G.healR = 999; G.runTime = G.t - G.t0; showWorldB(); for (let k = 1; k < 8; k++) G['fin' + k] = 0; G.ores.forEach(o => { o.beam.visible = false; o.light.visible = false; }); $('hud').hidden = true; $('keys') && ($('keys').hidden = true); say('天，合上了。人间，回来了。 · The sky is whole. The world returns.', 6000); document.exitPointerLock?.();
+  G.phase = 'won'; G.endT = 0; G.healR = 999; G.runTime = G.t - G.t0; if (!G.rev?.live) showWorldB(); for (let k = 1; k < 8; k++) G['fin' + k] = 0; G.ores.forEach(o => { o.beam.visible = false; o.light.visible = false; }); $('hud').hidden = true; $('keys') && ($('keys').hidden = true); say('天，合上了。人间，回来了。 · The sky is whole. The world returns.', 6000); document.exitPointerLock?.();
   $('prompt').classList.remove('on'); $('act').hidden = true; endingMusic(true);
   EL.forEach((e, i) => pluck(e.note, 5, 0.16, i * 0.35)); EL.forEach(e => pluck(e.note / 2, 6, 0.1, 2));
   crackSegs.forEach(s => { s.mended = 1; emit(s.center, 0xfff2c0, 120, 12, 0, 3); }); flash(0xfff2c0); if (droneG) droneG.gain.linearRampToValueAtTime(0.09, AC.currentTime + 4);
@@ -1694,7 +1738,7 @@ function resetGame() {
   G.chain = []; G.mistakes = 0; throws.length = 0; G.restoreAnim = [0, 0, 0, 0, 0]; U.uAll.value = 0; G.t0 = G.t; flights.length = 0; G.healR = 0; if (seam) { scene.remove(seam); seam = null; }
   for (const o of G.ores) { o.taken = false; o.used = false; o.stone.visible = true; o.stone.scale.setScalar(1); o.stone.position.copy(o.home); o.beam.visible = true; o.light.visible = true; }
   crackSegs.forEach(s => { s.mended = 0; s.el = null; s.mesh.material.color.set(0xfff6e0); if (s.rib) s.rib.parts.forEach(pp => { pp.core.material.color.set(0xffe2b0); pp.glow.material.color.set(0xff4a20); }); });
-  G.villagers.forEach(v => v.visible = false); G.cut = false; AV.fly = null; AV.camInit = false; nuwaBody.scale.setScalar(1); if (G.nuwaFade) { G.nuwaFade.forEach(([m, tr, o]) => { m.transparent = tr; m.opacity = o; }); G.nuwaFade = null; } nuwaBody.position.y = 0; if (G.fuse) { scene.remove(G.fuse.orb); G.fuse = null; } pillars.splice(0).forEach(p => scene.remove(p.m)); birds.forEach(b => b.g.visible = false); if (G.nuwaGlow) G.nuwaGlow.intensity = 0; if (worldB) { worldB.visible = false; water.visible = true; if (splatMesh) splatMesh.visible = true; if (G.furnace) G.furnace.obj.visible = true; }
+  G.villagers.forEach(v => v.visible = false); G.cut = false; AV.fly = null; AV.camInit = false; nuwaBody.scale.setScalar(1); if (G.nuwaFade) { G.nuwaFade.forEach(([m, tr, o]) => { m.transparent = tr; m.opacity = o; }); G.nuwaFade = null; } nuwaBody.position.y = 0; if (G.fuse) { scene.remove(G.fuse.orb); G.fuse = null; } pillars.splice(0).forEach(p => scene.remove(p.m)); birds.forEach(b => b.g.visible = false); if (G.nuwaGlow) G.nuwaGlow.intensity = 0; G.rev = null; REV.set(0, 0, 0, -1); REV_SYNC.forEach(f => f(REV)); if (worldB) { worldB.visible = false; water.visible = true; if (splatMesh) splatMesh.visible = true; if (G.furnace) G.furnace.obj.visible = true; }
   { const S = CFG.world?.starts; if (S && S.length) { const [sx, sz] = S[Math.floor(Math.random() * S.length)]; START_POS.set(sx, sz); } } // a different place in the valley each time
   player.pos.set(START_POS.x, groundFn(START_POS.x, START_POS.y), START_POS.y); player.yaw = Math.atan2(-(FURNACE_POS.x - START_POS.x), -(FURNACE_POS.y - START_POS.y)); player.pitch = 0.12; // facing the distant furnace
   G.endShowT = null; $('end').style.opacity = ''; $('end').hidden = true; $('lose').hidden = true; $('intro').hidden = true; $('hud').hidden = false;
@@ -1740,4 +1784,4 @@ addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; cam
 })();
 
 // test / recording hooks
-window.__butian = { sp: () => splatMesh, forgeDone, gy: (x, z) => groundFn(x, z), bolt: () => { boltT = 0; }, quake, pick: (nx, ny) => { const r = new THREE.Raycaster(); r.setFromCamera(new THREE.Vector2(nx, ny), camera); return [camera.position.toArray().map(v => +v.toFixed(1)), ...r.intersectObjects(groundMeshes, false).slice(0, 3).map(h => h.point.toArray().map(v => +v.toFixed(1)))]; }, NEXT, AV, wb: () => worldB && { vis: worldB.visible, ready: !!worldB.isInitialized || true }, crackSegs, hand, handL, FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };
+window.__butian = { sp: () => splatMesh, wbo: () => worldB, revive: (t) => { if (!G.rev) reviveWorld(crackSegs[2].center); G.rev.t = t; updateRevive(0); }, forgeDone, gy: (x, z) => groundFn(x, z), bolt: () => { boltT = 0; }, quake, pick: (nx, ny) => { const r = new THREE.Raycaster(); r.setFromCamera(new THREE.Vector2(nx, ny), camera); return [camera.position.toArray().map(v => +v.toFixed(1)), ...r.intersectObjects(groundMeshes, false).slice(0, 3).map(h => h.point.toArray().map(v => +v.toFixed(1)))]; }, NEXT, AV, wb: () => worldB && { vis: worldB.visible, ready: !!worldB.isInitialized || true }, crackSegs, hand, handL, FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };
