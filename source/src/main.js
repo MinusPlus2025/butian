@@ -1037,6 +1037,18 @@ function updateGems(dt) {
   gems.forEach((m, i) => { const a = G.t * 1.6 + i * Math.PI * 2 / 5; m.visible = G.phase === 'play' || G.phase === 'cine'; m.position.set(FURNACE_POS.x + Math.cos(a) * 0.9, G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.85 + Math.sin(G.t * 3 + i) * 0.15, FURNACE_POS.y + Math.sin(a) * 0.9); });
 }
 // five stones become one: a molten five-coloured slurry Nüwa carries to the sky in a single flight
+// the molten slurry itself: opaque, glowing five-colour rock that churns, with a white-hot rim (reads against a bright sky)
+const moltenMat = new THREE.ShaderMaterial({ uniforms: { uT: { value: 0 }, uA: { value: 1 } },
+  vertexShader: 'varying vec3 vN; varying vec3 vP; void main(){ vN = normalize(normalMatrix * normal); vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform float uT; uniform float uA; varying vec3 vN; varying vec3 vP;
+    float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+    float n3(vec3 p){ vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(mix(h(i), h(i + vec3(1,0,0)), f.x), mix(h(i + vec3(0,1,0)), h(i + vec3(1,1,0)), f.x), f.y), mix(mix(h(i + vec3(0,0,1)), h(i + vec3(1,0,1)), f.x), mix(h(i + vec3(0,1,1)), h(i + vec3(1,1,1)), f.x), f.y), f.z); }
+    void main(){ vec3 q = vP * 2.2 + vec3(0.0, uT * 0.6, 0.0); float a = n3(q) * 0.6 + n3(q * 2.3 - uT * 0.4) * 0.4;
+      vec3 c5 = 0.5 + 0.5 * cos(6.2832 * (a * 1.6 + uT * 0.05 + vec3(0.0, 0.33, 0.67)));
+      float crust = smoothstep(0.55, 0.75, n3(q * 3.1 + 7.0)); float rim = pow(1.0 - abs(vN.z), 2.0);
+      vec3 col = mix(c5 * 1.35, vec3(0.16, 0.1, 0.08), crust * 0.55) + vec3(1.0, 0.85, 0.6) * rim * 0.9;
+      gl_FragColor = vec4(col, uA); }` });
 const lavaMat = new THREE.ShaderMaterial({ uniforms: { uT: { value: 0 }, uA: { value: 0.95 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   vertexShader: 'varying vec3 vN; varying vec3 vP; void main(){ vN = normalize(normalMatrix * normal); vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: `uniform float uT; uniform float uA; varying vec3 vN; varying vec3 vP;
@@ -1048,7 +1060,7 @@ function fuseAndFly() {
   if (G.phase !== 'play') return;
   const mouth = new THREE.Vector3(FURNACE_POS.x, G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.8, FURNACE_POS.y);
   banner('五 石 合 炼', 'The five stones fuse into one', '#ffe2a0'); drum(0.8); G.cut = true; G.aimT = 3;
-  const orb = new THREE.Group(); const core = new THREE.Mesh(new THREE.SphereGeometry(0.6, 40, 30), lavaMat); orb.add(core);
+  const orb = new THREE.Group(); const core = new THREE.Mesh(new THREE.SphereGeometry(0.85, 48, 32), moltenMat); orb.add(core);
   const halo = new THREE.Mesh(new THREE.SphereGeometry(1.1, 24, 16), new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })); orb.add(halo);
   { const pl = new THREE.PointLight(0xffd8a0, 0, 12); orb.add(pl); orb.userData.pl = pl; }
   orb.position.copy(mouth); orb.scale.setScalar(0.01); scene.add(orb);
@@ -1058,7 +1070,7 @@ function fuseAndFly() {
 // the five glowing stones circle down into the mouth one after another; the furnace roars; the slurry wells up and hangs above it
 function updateFuse(dt) {
   const F = G.fuse; if (!F) return; F.t += dt; const t = F.t, M = F.mouth;
-  lavaMat.uniforms.uT.value = G.t;
+  lavaMat.uniforms.uT.value = G.t; moltenMat.uniforms.uT.value = G.t;
   gems.forEach((m, i) => { const k = THREE.MathUtils.clamp((t - i * 0.18) / 1.4, 0, 1), e = k * k, a = G.t * (1.6 + k * 5) + i * Math.PI * 2 / 5, r = 0.9 * (1 - e);
     m.position.set(M.x + Math.cos(a) * r, M.y + 0.4 * (1 - e) - 0.2 * e, M.z + Math.sin(a) * r); m.scale.setScalar(1 - e * 0.8);
     if (k >= 1 && m.visible) { m.visible = false; emit(M, EL[i].color, 14, 1.4, 1.2, 0.7); clang(0.12); } });
@@ -1100,12 +1112,12 @@ function mendArrive(f) {
   if (G.chain.length === 5 && !f.nuwa) setTimeout(win, 1800);
 }
 // Nüwa gathers herself, soars to the middle of the crack, lifts the molten stone into it and it floods the whole rift at once, then she glides back down
-let seam = null; const seamMat = lavaMat.clone();
+let seam = null; const seamMat = lavaMat.clone(); const seamRock = moltenMat.clone(); seamRock.transparent = true; seamRock.uniforms = { uT: moltenMat.uniforms.uT, uA: { value: 1 } };
 function nuwaFlightAll(f, i, dt) {
   const A = AV.fly; A.t += dt; const up = 1.2, rise = 3.8, lift = 1.4, spread = 4.8, hold = 2.2, down = 2.8, C = crackSegs.map(c => c.center), mid = C[2];
   const ground = () => Math.max(groundFn(A.back.x, A.back.z), G.water) + 0.35;
   const below = tmpB.copy(mid).add(new THREE.Vector3(0, -NUWA_H - 3, 4));
-  lavaMat.uniforms.uT.value = G.t; seamMat.uniforms.uT.value = G.t;
+  lavaMat.uniforms.uT.value = G.t; seamMat.uniforms.uT.value = G.t; moltenMat.uniforms.uT.value = G.t;
   const tRise = up + rise, tLift = tRise + lift, tSpread = tLift + spread, tDown = tSpread + hold;
   const reach = Math.max(...C.map(c => Math.abs(c.z - mid.z))) + 18;
   if (A.t < up) { avatar.position.y += dt * 0.4; f.obj.position.lerp(tmpA.copy(avatar.position).add(tmpV.set(0, NUWA_H + 0.6, 0)), Math.min(1, dt * 3)); if (Math.random() < 0.7) emit(f.obj.position, EL[(Math.random() * 5) | 0].color, 2, 1, 1, 1); }
@@ -1121,12 +1133,12 @@ function nuwaFlightAll(f, i, dt) {
   } else if (A.t < tSpread) { // one pour: the slurry runs out along the whole crack from the middle, sealing it as it goes
     if (!seam) {
       const curve = new THREE.CatmullRomCurve3(C.map(c => c.clone()));
-      seam = new THREE.Mesh(new THREE.TubeGeometry(curve, 120, 0.25, 8), seamMat); seam.userData.n = seam.geometry.index.count; seamMat.uniforms.uA.value = 0.35; scene.add(seam);
+      seam = new THREE.Mesh(new THREE.TubeGeometry(curve, 120, 0.55, 10), seamRock); seam.userData.n = seam.geometry.index.count; seamRock.uniforms.uA.value = 1; scene.add(seam);
       banner('补 天', 'The molten stone floods the rift', '#ffe2a0'); gong(); drum(0.9); sfxMend(EL[2].note); flash(0xfff0d0); shake = 0.5; fovKick = 6;
       emit(mid, 0xffffff, 200, 10, 0, 2); EL.forEach(e => emit(mid, e.color, 80, 8, 0, 2.2));
     }
     const k = (A.t - tLift) / spread, e = 1 - Math.pow(1 - k, 2);
-    const n = seam.userData.n, seg = 12 * 6, half = Math.floor(n / seg / 2) * seg, h = Math.floor(half * e / seg) * seg;
+    const n = seam.userData.n, seg = seam.geometry.parameters.radialSegments * 6, half = Math.floor(n / seg / 2) * seg, h = Math.floor(half * e / seg) * seg;
     seam.geometry.setDrawRange(half - h, h * 2);
     G.healR = e * reach;
     f.obj.scale.setScalar(Math.max(0.05, 1 - e)); f.obj.position.copy(mid);
@@ -1135,7 +1147,7 @@ function nuwaFlightAll(f, i, dt) {
   } else if (A.t < tDown) { // the seam cools into sky
     if (f.obj.parent) scene.remove(f.obj); G.healR = reach + 30;
     crackSegs.forEach(s => { if (!s.mended) s.mended = 0.001; });
-    const k = (A.t - tSpread) / hold; seamMat.uniforms.uA.value = 0.35 * (1 - k * k);
+    const k = (A.t - tSpread) / hold; seam.scale.setScalar(1); seam.visible = k < 0.95; seamRock.uniforms.uA.value = 1 - k * k;
     if (!f.cooled && k > 0.3) { f.cooled = 1; whiteout(showWorldB); EL.forEach((e, n) => pluck(e.note, 4, 0.12, n * 0.12)); }
     avatar.position.y += Math.sin(A.t * 2) * 0.003; if (!f.top) f.top = avatar.position.clone();
   } else {
@@ -1226,6 +1238,27 @@ function caption(zh, en, ms) {
   clearTimeout(caption._t); caption._t = setTimeout(() => line.classList.remove('on'), ms);
 }
 const pillars = [];
+// once the world is whole again, a few birds wheel over the valley: dark silhouettes, wings beating then gliding
+const birds = [];
+function makeBirds() {
+  const mat = new THREE.MeshBasicMaterial({ color: 0x2b2824, side: THREE.DoubleSide, fog: true });
+  const wing = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, -0.18, 0, 0, 0.22, 1, 0.05, 0.02], 3));
+  const body = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0.02, 0.5, -0.08, 0, -0.35, 0.08, 0, -0.35], 3));
+  const C = crackSegs[2]?.center || new THREE.Vector3(0, 20, 0);
+  for (let i = 0; i < 7; i++) {
+    const g = new THREE.Group(), L = new THREE.Mesh(wing, mat), R = new THREE.Mesh(wing, mat); R.scale.x = -1; g.add(L, R, new THREE.Mesh(body, mat));
+    g.scale.setScalar(0.9 + Math.random() * 0.5); g.visible = false; scene.add(g);
+    birds.push({ g, L, R, cx: C.x + (Math.random() - 0.5) * 20, cy: 14 + Math.random() * 14, cz: C.z - 10 + (Math.random() - 0.5) * 40, r: 14 + Math.random() * 22, w: (0.12 + Math.random() * 0.1) * (Math.random() < 0.5 ? -1 : 1), a: Math.random() * 6.28, ph: Math.random() * 6.28 });
+  }
+}
+function updateBirds(dt, on) {
+  if (on && !birds.length) makeBirds();
+  for (const b of birds) { b.g.visible = on; if (!on) continue;
+    b.a += b.w * dt; const x = b.cx + Math.cos(b.a) * b.r, z = b.cz + Math.sin(b.a) * b.r, y = b.cy + Math.sin(b.a * 2 + b.ph) * 1.5;
+    b.g.position.set(x, y, z); b.g.rotation.set(0, Math.atan2(-Math.sin(b.a) * Math.sign(b.w), Math.cos(b.a) * Math.sign(b.w)) , -Math.sign(b.w) * 0.25);
+    const cyc = (G.t * 0.5 + b.ph) % 3, flap = cyc < 1.4 ? Math.sin(G.t * 9 + b.ph) * 0.7 : 0.08; // a few beats, then a long glide
+    b.L.rotation.z = flap; b.R.rotation.z = -flap; }
+}
 function finaleTick(dt) {
   const t = G.endT, once = (k, at, fn) => { if (t > at && !G['fin' + k]) { G['fin' + k] = 1; fn(); } };
   once(1, 2.5, () => {
@@ -1241,14 +1274,17 @@ function finaleTick(dt) {
   if (t > 14 && t < 21) for (let k = 0; k < 3; k++) emit(new THREE.Vector3(player.pos.x + (Math.random() - 0.5) * 50, 10 + Math.random() * 10, player.pos.z - 10 + (Math.random() - 0.5) * 50), Math.random() < 0.8 ? 0x9a948a : 0xc8bca8, 1, 0.25, -0.9, 6);
   G.water = THREE.MathUtils.lerp(G.water, t > 14 ? (CFG.world?.water?.water ?? -2.6) - 4 : G.water, dt * 0.35);
   once(4, 20.5, () => { flash(0xffffff); showWorldB(); EL.forEach((e, i) => pluck(e.note, 5, 0.16, i * 0.3)); });
+  updateBirds(dt, !!(worldB && worldB.visible) && t > 20.5);
   once(5, 22, () => caption('苍天补好　四极端正\n洪水干涸　冀州太平', 'The sky was mended and the four pillars stood upright; the flood dried and the land was at peace.', 6500));
   once(6, 29.5, () => caption('天地复原　百姓重生\n女娲耗尽了力量　身归天地', 'Heaven and earth were restored and the people lived on. Spent, Nüwa gave herself back to the world.', 7000));
   // the whole world is her gift: the title page's 礼 seal comes down on it, full size
   once(7, 36.5, () => caption('这片山河　是女娲留给人间的礼物', 'This world is the gift Nüwa left to us.', 6000));
   if (t > 31 && t < 38) { const k = (t - 31) / 7, e = k * k;
     if (!G.nuwaFade) { G.nuwaFade = []; nuwaBody.traverse(o => { if (o.material) { const ms = [].concat(o.material); ms.forEach(m => { G.nuwaFade.push([m, m.transparent, m.opacity]); m.transparent = true; }); } }); }
-    G.nuwaFade.forEach(([m, , o]) => m.opacity = o * (1 - e)); nuwaBody.position.y = e * 1.2;
-    if (Math.random() < 0.6 * (1 - k * 0.5)) emit(avatar.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.9, Math.random() * NUWA_H, (Math.random() - 0.5) * 0.9)), Math.random() < 0.7 ? 0xffe8c0 : EL[Math.floor(Math.random() * 5)].color, 1, 0.15, 0.9, 3.5); }
+    G.nuwaFade.forEach(([m, , o]) => { m.opacity = o * (1 - THREE.MathUtils.smoothstep(k, 0.25, 0.95)); if (m.emissive) { m.emissive.setHex(0xffc870); m.emissiveIntensity = Math.min(1, k * 3) * 0.8; } }); nuwaBody.position.y = e * 1.5;
+    const hY = NUWA_H * (1 - THREE.MathUtils.smoothstep(k, 0.2, 0.9)); // she comes apart from the feet up
+    for (let n = 0; n < 4; n++) if (Math.random() < 0.9) emit(avatar.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.8, NUWA_H - Math.random() * Math.max(0.3, hY) + e * 1.5, (Math.random() - 0.5) * 0.8)), Math.random() < 0.7 ? 0xffe8c0 : EL[Math.floor(Math.random() * 5)].color, 1, 0.25, 1.6 + Math.random() * 1.5, 4.5);
+    if (!G.nuwaGlow) { G.nuwaGlow = new THREE.PointLight(0xffd9a0, 0, 10); scene.add(G.nuwaGlow); } G.nuwaGlow.position.copy(avatar.position).add(tmpV.set(0, 1.4 + e * 1.5, 0)); G.nuwaGlow.intensity = Math.sin(k * Math.PI) * 14; }
   if (t > 38 && nuwaBody.visible && G.nuwaFade) nuwaBody.visible = false;
 }
 let worldB = null;
@@ -1350,7 +1386,14 @@ function update(dt) {
     const k = Math.min(1, G.endT / 9), e = k * k * (3 - 2 * k);
     if (TP) { nuwaBody.visible = true; finaleTick(dt); const FC = CFG.world?.finaleCam; // a narrow canyon needs a hand-placed camera: [x,y,z] from/to and a look target
       if (FC) { const P = FC.to, L = FC.look; camera.position.set(THREE.MathUtils.lerp(player.pos.x, P[0], e), THREE.MathUtils.lerp(eye + 1.5, P[1], e), THREE.MathUtils.lerp(player.pos.z + 4, P[2], e)); camera.lookAt(THREE.MathUtils.lerp(player.pos.x, L[0], e), THREE.MathUtils.lerp(eye + 1, L[1], e), THREE.MathUtils.lerp(player.pos.z - 10, L[2], e)); }
-      else { camera.position.set(player.pos.x + Math.sin(player.yaw) * (6 + e * 40), THREE.MathUtils.lerp(eye + 2, eye + 45, e), player.pos.z + Math.cos(player.yaw) * (6 + e * 40)); camera.lookAt(THREE.MathUtils.lerp(player.pos.x, 0, e), THREE.MathUtils.lerp(eye, 30, e), THREE.MathUtils.lerp(player.pos.z, -60, e)); } avatar.position.set(player.pos.x, Math.max(groundFn(player.pos.x, player.pos.z), G.water) + 0.35 + Math.sin(G.t * 1.6) * 0.08, player.pos.z); avatar.visible = true; }
+      else { camera.position.set(player.pos.x + Math.sin(player.yaw) * (6 + e * 40), THREE.MathUtils.lerp(eye + 2, eye + 45, e), player.pos.z + Math.cos(player.yaw) * (6 + e * 40)); camera.lookAt(THREE.MathUtils.lerp(player.pos.x, 0, e), THREE.MathUtils.lerp(eye, 30, e), THREE.MathUtils.lerp(player.pos.z, -60, e)); } avatar.position.set(player.pos.x, Math.max(groundFn(player.pos.x, player.pos.z), G.water) + 0.35 + Math.sin(G.t * 1.6) * 0.08, player.pos.z); avatar.visible = true;
+      // Nüwa gives herself back: the camera comes round to face her, then follows the light up into the sky
+      const tt = G.endT, d = THREE.MathUtils.smoothstep(tt, 28.5, 31) * (1 - THREE.MathUtils.smoothstep(tt, 39, 41.5));
+      if (d > 0) { const ax = camera.position.x - avatar.position.x, az = camera.position.z - avatar.position.z, al = Math.hypot(ax, az) || 1;
+        const nc = tmpA.set(avatar.position.x + ax / al * 4.2, avatar.position.y + 1.5, avatar.position.z + az / al * 4.2);
+        const up = THREE.MathUtils.clamp((tt - 34) / 5, 0, 1); const lk = tmpB.set(avatar.position.x, avatar.position.y + 1.3 + up * up * 9, avatar.position.z);
+        const look0 = camera.getWorldDirection(tmpV).multiplyScalar(10).add(camera.position);
+        camera.position.lerp(nc, d); camera.lookAt(look0.lerp(lk, d)); } }
     else { camera.position.set(player.pos.x, THREE.MathUtils.lerp(eye, eye + 70, e), player.pos.z + e * 60);
     camera.rotation.order = 'YXZ'; camera.rotation.y = THREE.MathUtils.lerp(player.yaw, 0, e); camera.rotation.x = THREE.MathUtils.lerp(player.pitch, -0.18, e); }
   }
@@ -1650,7 +1693,7 @@ function resetGame() {
   G.chain = []; G.mistakes = 0; throws.length = 0; G.restoreAnim = [0, 0, 0, 0, 0]; U.uAll.value = 0; G.t0 = G.t; flights.length = 0; G.healR = 0; if (seam) { scene.remove(seam); seam = null; }
   for (const o of G.ores) { o.taken = false; o.used = false; o.stone.visible = true; o.stone.scale.setScalar(1); o.stone.position.copy(o.home); o.beam.visible = true; o.light.visible = true; }
   crackSegs.forEach(s => { s.mended = 0; s.el = null; s.mesh.material.color.set(0xfff6e0); if (s.rib) s.rib.parts.forEach(pp => { pp.core.material.color.set(0xffe2b0); pp.glow.material.color.set(0xff4a20); }); });
-  G.villagers.forEach(v => v.visible = false); G.cut = false; AV.fly = null; AV.camInit = false; nuwaBody.scale.setScalar(1); if (G.nuwaFade) { G.nuwaFade.forEach(([m, tr, o]) => { m.transparent = tr; m.opacity = o; }); G.nuwaFade = null; } nuwaBody.position.y = 0; if (G.fuse) { scene.remove(G.fuse.orb); G.fuse = null; } pillars.splice(0).forEach(p => scene.remove(p.m)); if (worldB) { worldB.visible = false; water.visible = true; if (splatMesh) splatMesh.visible = true; if (G.furnace) G.furnace.obj.visible = true; }
+  G.villagers.forEach(v => v.visible = false); G.cut = false; AV.fly = null; AV.camInit = false; nuwaBody.scale.setScalar(1); if (G.nuwaFade) { G.nuwaFade.forEach(([m, tr, o]) => { m.transparent = tr; m.opacity = o; }); G.nuwaFade = null; } nuwaBody.position.y = 0; if (G.fuse) { scene.remove(G.fuse.orb); G.fuse = null; } pillars.splice(0).forEach(p => scene.remove(p.m)); birds.forEach(b => b.g.visible = false); if (G.nuwaGlow) G.nuwaGlow.intensity = 0; if (worldB) { worldB.visible = false; water.visible = true; if (splatMesh) splatMesh.visible = true; if (G.furnace) G.furnace.obj.visible = true; }
   player.pos.set(START_POS.x, groundFn(START_POS.x, START_POS.y), START_POS.y); player.yaw = 0; player.pitch = 0.12;
   G.endShowT = null; $('end').style.opacity = ''; $('end').hidden = true; $('lose').hidden = true; $('intro').hidden = true; $('hud').hidden = false;
   G.n50 = G.n80 = 0; hudRing(); say(TP ? '第一步：跟着金色光点走到发光的石头旁，按 E 或左键拾起 · Follow the golden dots to a glowing stone, then press E or click' : '第一步：跟着金色光点找到原石，点击抓起 · Follow the golden lights and grab an ore', 7000);
