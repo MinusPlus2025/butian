@@ -454,7 +454,11 @@ async function setupNuwa() {
 function nearestOreTP() { let best = null, bd = CFG.world?.pickRange ?? 4.5; for (const o of G.ores) { if (o.taken || o.used) continue; const d = Math.hypot(o.home.x - player.pos.x, o.home.z - player.pos.z); if (d < bd) { bd = d; best = o; } } return best; }
 const fvV = new THREE.Vector3();
 // the furnace is actually on screen (not behind you or off to the side)
-function furnaceInView() { if (!G.furnace) return false; fvV.set(FURNACE_POS.x, G.furnace.y + 1.2, FURNACE_POS.y).project(camera); return fvV.z < 1 && Math.abs(fvV.x) < 0.75 && Math.abs(fvV.y) < 0.9; }
+// within ±45° of where you face, by horizontal bearing (looking up or down doesn't matter); right next to it, ±70° is enough
+function furnaceInView() { if (!G.furnace) return false; const fw = camera.getWorldDirection(fvV), fl = Math.hypot(fw.x, fw.z) || 1, rx = FURNACE_POS.x - camera.position.x, rz = FURNACE_POS.y - camera.position.z, d = Math.hypot(rx, rz) || 1;
+  const cos = (rx * fw.x + rz * fw.z) / (fl * d); return cos > Math.cos((d < 2.5 ? 70 : 45) * Math.PI / 180); }
+const THROW_R = () => CFG.world?.throwRange ?? 6;
+function canThrow() { return furnaceDist() < THROW_R() && furnaceInView(); }
 function furnaceDist() { return Math.hypot(FURNACE_POS.x - player.pos.x, FURNACE_POS.y - player.pos.z); }
 
 const handL = new THREE.Group(); camera.add(handL); handL.visible = false;
@@ -950,10 +954,10 @@ function handAction() {
   if (TP) {
     AV.reach = 0.45; reachT = 0.35;
     if (!G.carrying) { const o = nearestOreTP(); if (o) { G.grabFrom = o.stone.position.clone(); G.grabT = 0; return interact(o); } say('走到发光的五行石旁边，再按 E 或左键 · Walk up to a glowing stone, then press E or click', 2400); }
-    else if (furnaceDist() < (CFG.world?.throwRange ?? 7)) {
+    else if (canThrow()) {
       const o = G.carrying; G.carrying = null; const fpos = new THREE.Vector3(FURNACE_POS.x, G.furnace.y + (CFG.world?.furnaceSize ?? 3) * 0.8, FURNACE_POS.y);
       if (G.held) { G.held.g.getWorldPosition(o.stone.position); heldHide(); } o.stone.visible = true; throws.push({ o, from: o.stone.position.clone(), to: fpos, t: 0 }); noiseBurst(0.35, 300, 900, 0.12, 'lowpass');
-    } else say('带着石头走到铜炉旁边 · Carry it to the bronze furnace', 2000);
+    } else say(furnaceDist() < THROW_R() ? '面向铜炉再投 · Face the furnace, then throw' : '带着石头走到铜炉旁边 · Carry it to the bronze furnace', 2000);
     return;
   }
   reachT = 0.35;
@@ -1412,8 +1416,8 @@ function update(dt) {
     let p = '';
     if (G.forging) p = '炼石中…… · Forging';
     else if (TP && G.cut) p = '';
-    else if (TP && G.carrying && furnaceDist() < (CFG.world?.throwRange ?? 7) && furnaceInView()) p = `按 E 或左键，把${G.carrying.el.zh}石投入铜炉 · E / click: into the furnace`;
-    else if (TP && G.carrying && furnaceDist() < (CFG.world?.throwRange ?? 7)) p = `铜炉就在附近，转身看向它 · The furnace is close: turn to face it`;
+    else if (TP && G.carrying && canThrow()) p = `按 E 或左键，把${G.carrying.el.zh}石投入铜炉 · E / click: into the furnace`;
+    else if (TP && G.carrying && furnaceDist() < THROW_R()) p = `铜炉就在附近，转身面向它 · The furnace is close: turn to face it`;
     else if (TP && G.carrying) p = `托着${G.carrying.el.zh}石，回到铜炉 · Carry it to the furnace`;
     else if (TP) { const o = nearestOreTP(); if (o) p = `按 E 或左键拾起${o.el.zh}石 · E / click: pick up ${o.el.en}`; }
     else if (G.carrying && nearFurnace()) p = `对准铜炉，点击扔进去 · Click to throw it in`;
@@ -1425,7 +1429,7 @@ function update(dt) {
     if (!G.forging && !throws.length) {
       if (FPV) {
         if (!G.carrying) { rc = nearestOreTP(); G.hover = rc; if (rc) rl = `E 拾起 ${rc.el.zh}石 · Pick up`; }
-        else { G.hover = null; if (furnaceDist() < (CFG.world?.throwRange ?? 7) && furnaceInView()) { rc = G.carrying; rl = `E 投入铜炉 · Into the furnace`; } }
+        else { G.hover = null; if (canThrow()) { rc = G.carrying; rl = `E 投入铜炉 · Into the furnace`; } }
       } else if (!G.carrying) {
         let bd = 1e9; for (const o of G.ores) { if (o.taken || o.used) continue; const dd = o.home.distanceTo(camera.position); if (dd < bd && aimAt(o.home, 30, o === G.lastRc ? 1.5 : 1)) { bd = dd; rc = o; } }
         G.hover = rc; if (rc) rl = `抓取 ${rc.el.zh} · Grab`;
@@ -1486,7 +1490,7 @@ function autopilot(dt) {
   if (G.phase !== 'play' || G.forging || throws.length || flights.length) return;
   if (AP.wait > 0) { AP.wait -= dt; return; }
   let tx, tz, near;
-  if (G.carrying) { tx = FURNACE_POS.x; tz = FURNACE_POS.y; near = 7; }
+  if (G.carrying) { tx = FURNACE_POS.x; tz = FURNACE_POS.y; near = 4.5; }
   else {
     let need = G.chain.length ? NEXT[G.chain[G.chain.length - 1]] : 'water';
     if (G.chain.length === 1 && !AP.wrongDone) need = NEXT[NEXT[G.chain[0]]];
@@ -1531,15 +1535,18 @@ function updateGuide() {
   guideBeams(G.carrying ? 'furnace' : G.ores.find(o => o.home.x === tx && o.home.z === tz));
   const dist = Math.hypot(tx - player.pos.x, tz - player.pos.z);
   gV.set(tx, groundFn(tx, tz) + 2, tz).project(camera);
-  const on = gV.z < 1 && Math.abs(gV.x) < 0.85 && Math.abs(gV.y) < 0.85;
+  let on = gV.z < 1 && Math.abs(gV.x) < 0.85 && Math.abs(gV.y) < 0.85;
   let x, y, ang;
-  if (on) { x = (gV.x + 1) / 2 * innerWidth; y = (1 - gV.y) / 2 * innerHeight - 40 + Math.sin(G.t * 4) * 8; ang = 180; }
-  else { // off screen: a compass around the reticle by horizontal bearing (ahead = up, behind = down), never by the raw projection, which flips for points behind or below the view
+  let turn = '';
+  if (on) { x = (gV.x + 1) / 2 * innerWidth; y = (1 - gV.y) / 2 * innerHeight - 30; ang = 0; } // a marker sitting on the target itself
+  else { // off screen: by horizontal bearing only, so the arrow only ever says left, right or behind, never "down"
     const fw = camera.getWorldDirection(tmpGuide); const fx = fw.x, fz = fw.z, fl = Math.hypot(fx, fz) || 1;
     const rx = tx - camera.position.x, rz = tz - camera.position.z;
-    const ahead = (rx * fx + rz * fz) / fl, right = (rx * -fz + rz * fx) / fl;
-    const a = Math.atan2(right, ahead); const r = Math.min(innerWidth, innerHeight) * 0.3;
-    x = innerWidth / 2 + Math.sin(a) * r; y = innerHeight / 2 - Math.cos(a) * r; ang = a * 180 / Math.PI; }
+    const ahead = (rx * fx + rz * fz) / fl, right = (rx * -fz + rz * fx) / fl, a = Math.atan2(right, ahead) * 180 / Math.PI;
+    if (Math.abs(a) < 30) { on = true; x = THREE.MathUtils.clamp((gV.z < 1 ? (gV.x + 1) / 2 : 0.5) * innerWidth, 80, innerWidth - 80); y = THREE.MathUtils.clamp((1 - gV.y) / 2 * innerHeight, 90, innerHeight - 140); ang = 0; } // ahead, just above or below the view
+    else if (Math.abs(a) < 140) { x = a > 0 ? innerWidth - 150 : 150; y = innerHeight / 2; ang = a > 0 ? 90 : -90; turn = a > 0 ? '右转 → · Turn right' : '← 左转 · Turn left'; }
+    else { x = innerWidth / 2; y = innerHeight - 150; ang = 180; turn = '转身 · Turn around'; }
+  }
   // glowing dots flowing along the ground toward the target
   const dx = tx - player.pos.x, dz = tz - player.pos.z; const step = 1.6; const n = Math.min(TRAIL_N, Math.floor(dist / step));
   for (let i = 0; i < TRAIL_N; i++) {
@@ -1551,7 +1558,7 @@ function updateGuide() {
   trail.instanceMatrix.needsUpdate = true; trail.visible = true;
   g.hidden = false; g.classList.toggle('edge', !on); g.style.transform = `translate(${x}px, ${y}px)`;
   $('guide-arrow').style.transform = `rotate(${ang}deg)`;
-  $('guide-text').textContent = `${L(label)} · ${Math.round(dist)}m`;
+  $('guide-text').textContent = (turn ? L(turn) + '  ' : '') + `${L(label)} · ${Math.round(dist)}m`;
 }
 const easeOut = x => 1 - Math.pow(1 - x, 2);
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;

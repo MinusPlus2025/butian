@@ -74,9 +74,11 @@ button.big:focus-visible, #act:focus-visible { outline: 2px solid var(--seal); o
 .end-stats span:first-child { color: var(--paper-dim); font-size: .8rem; letter-spacing: .1em; }
 .end-stats span:last-child { font-family: var(--latin); font-size: 1.4rem; font-variant-numeric: tabular-nums; }
 #loading { position: fixed; bottom: 16px; right: 16px; font-size: .8rem; color: var(--paper-dim); z-index: 11; }
-#guide { position: fixed; left: 0; top: 0; z-index: 5; pointer-events: none; display: grid; justify-items: center; gap: 2px; margin: -18px 0 0 -60px; width: 120px; }
+#guide { position: fixed; left: 0; top: 0; z-index: 5; pointer-events: none; display: grid; justify-items: center; gap: 2px; margin: -18px 0 0 -130px; width: 260px; }
 #guide-arrow { display: block; filter: drop-shadow(0 0 8px rgba(255,190,60,.95)) drop-shadow(0 2px 2px rgba(0,0,0,.6)); transition: transform .08s linear; }
 #guide.edge #guide-arrow { animation: gpulse 1s ease-in-out infinite; }
+#guide-pin { display: block; filter: drop-shadow(0 0 10px rgba(255,190,60,.95)) drop-shadow(0 2px 2px rgba(0,0,0,.6)); animation: gpulse 1.2s ease-in-out infinite; }
+#guide:not(.edge) #guide-arrow, #guide.edge #guide-pin { display: none; }
 @keyframes gpulse { 50% { opacity: .55; } }
 #guide-text { background: rgba(20,14,4,.55); padding: 1px 8px; border-radius: 9px; border: 1px solid rgba(255,210,120,.5); }
 #banner { position: fixed; left: 50%; top: 30%; transform: translate(-50%,-50%); z-index: 6; pointer-events: none; text-align: center; opacity: 0; display: grid; gap: 4px; }
@@ -153,7 +155,7 @@ body[data-lang="zh"] #giftseal small { display: none; }
 <div id="drown"></div>
 <div id="giftseal" hidden><div class="bigseal">礼</div><p><span class="zh-t">这个世界，是女娲留给人间的礼物</span><small class="en-t">This world is Nüwa's gift to us</small></p></div>
 <div id="banner"><b></b><i></i></div>
-<div id="guide" hidden><svg id="guide-arrow" viewBox="0 0 48 48" width="64" height="64"><defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6c8"/><stop offset="1" stop-color="#f0a020"/></linearGradient></defs><path d="M24 3 L44 40 L24 31 L4 40 Z" fill="url(#ga)" stroke="#5a2e00" stroke-width="2.5" stroke-linejoin="round"/></svg><div id="guide-text"></div></div>
+<div id="guide" hidden><svg id="guide-pin" viewBox="0 0 48 48" width="40" height="40"><path d="M24 2 L42 24 L24 46 L6 24 Z" fill="url(#ga)" stroke="#5a2e00" stroke-width="2.5" stroke-linejoin="round"/><circle cx="24" cy="24" r="6" fill="#fff8dc" stroke="#5a2e00" stroke-width="2"/></svg><svg id="guide-arrow" viewBox="0 0 48 48" width="64" height="64"><defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6c8"/><stop offset="1" stop-color="#f0a020"/></linearGradient></defs><path d="M24 3 L44 40 L24 31 L4 40 Z" fill="url(#ga)" stroke="#5a2e00" stroke-width="2.5" stroke-linejoin="round"/></svg><div id="guide-text"></div></div>
 
 <div id="hud" hidden>
   <div id="ring">
