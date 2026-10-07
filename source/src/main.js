@@ -452,6 +452,9 @@ async function setupNuwa() {
   } catch (e) { console.warn('nuwa load failed', e); }
 }
 function nearestOreTP() { let best = null, bd = CFG.world?.pickRange ?? 4.5; for (const o of G.ores) { if (o.taken || o.used) continue; const d = Math.hypot(o.home.x - player.pos.x, o.home.z - player.pos.z); if (d < bd) { bd = d; best = o; } } return best; }
+const fvV = new THREE.Vector3();
+// the furnace is actually on screen (not behind you or off to the side)
+function furnaceInView() { if (!G.furnace) return false; fvV.set(FURNACE_POS.x, G.furnace.y + 1.2, FURNACE_POS.y).project(camera); return fvV.z < 1 && Math.abs(fvV.x) < 0.75 && Math.abs(fvV.y) < 0.9; }
 function furnaceDist() { return Math.hypot(FURNACE_POS.x - player.pos.x, FURNACE_POS.y - player.pos.z); }
 
 const handL = new THREE.Group(); camera.add(handL); handL.visible = false;
@@ -1409,7 +1412,8 @@ function update(dt) {
     let p = '';
     if (G.forging) p = '炼石中…… · Forging';
     else if (TP && G.cut) p = '';
-    else if (TP && G.carrying && furnaceDist() < (CFG.world?.throwRange ?? 7)) p = `按 E 或左键，把${G.carrying.el.zh}石投入铜炉 · E / click: into the furnace`;
+    else if (TP && G.carrying && furnaceDist() < (CFG.world?.throwRange ?? 7) && furnaceInView()) p = `按 E 或左键，把${G.carrying.el.zh}石投入铜炉 · E / click: into the furnace`;
+    else if (TP && G.carrying && furnaceDist() < (CFG.world?.throwRange ?? 7)) p = `铜炉就在附近，转身看向它 · The furnace is close: turn to face it`;
     else if (TP && G.carrying) p = `托着${G.carrying.el.zh}石，回到铜炉 · Carry it to the furnace`;
     else if (TP) { const o = nearestOreTP(); if (o) p = `按 E 或左键拾起${o.el.zh}石 · E / click: pick up ${o.el.en}`; }
     else if (G.carrying && nearFurnace()) p = `对准铜炉，点击扔进去 · Click to throw it in`;
@@ -1421,7 +1425,7 @@ function update(dt) {
     if (!G.forging && !throws.length) {
       if (FPV) {
         if (!G.carrying) { rc = nearestOreTP(); G.hover = rc; if (rc) rl = `E 拾起 ${rc.el.zh}石 · Pick up`; }
-        else { G.hover = null; if (furnaceDist() < (CFG.world?.throwRange ?? 7)) { rc = G.carrying; rl = `E 投入铜炉 · Into the furnace`; } }
+        else { G.hover = null; if (furnaceDist() < (CFG.world?.throwRange ?? 7) && furnaceInView()) { rc = G.carrying; rl = `E 投入铜炉 · Into the furnace`; } }
       } else if (!G.carrying) {
         let bd = 1e9; for (const o of G.ores) { if (o.taken || o.used) continue; const dd = o.home.distanceTo(camera.position); if (dd < bd && aimAt(o.home, 30, o === G.lastRc ? 1.5 : 1)) { bd = dd; rc = o; } }
         G.hover = rc; if (rc) rl = `抓取 ${rc.el.zh} · Grab`;
