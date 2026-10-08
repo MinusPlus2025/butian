@@ -314,8 +314,9 @@ async function buildSplatWorld(W) {
   await splatMesh.initialized;
   // a light world opens the game fast; the full-density valley streams in behind it and takes over unnoticed, then the mended world
   (async () => {
+    if (W.spzBLo) await loadWorldB(W.spzBLo);
     if (W.spzHi) try { const hi = place(new SplatMesh({ fileBytes: await loadBin(W.spzHi), fileType: 'spz', worldModifier: mod })); await hi.initialized; const lo = splatMesh; hi.visible = lo.visible; hi.__sync = lo.__sync; splatMesh = hi; scene.add(hi); hi.updateVersion(); setTimeout(() => { scene.remove(lo); lo.dispose?.(); }, 400); } catch (e) { console.warn('hi-res world failed', e); }
-    loadWorldB();
+    await loadWorldB(W.spzB);
   })();
   if (W.collider) {
     const g = await loadGLB(W.collider);
@@ -1365,7 +1366,7 @@ const REV = new THREE.Vector4(0, 0, 0, -1), REV_SYNC = [], REV_W = 9, REV_T = 7,
 function showWorldB() { if (!worldB || (worldB.visible && !G.rev?.live)) return; if (G.rev) G.rev.live = false; REV.set(0, 0, 0, -1); REV_SYNC.forEach(f => f(REV)); worldB.visible = true; water.visible = false; if (splatMesh) splatMesh.visible = false; if (G.furnace) G.furnace.obj.visible = false; G.villagers.forEach(v => v.visible = false); }
 // the mend spreads: a sphere of light grows from the sealed rift, the green valley forms inside it and the grey one falls away outside
 function reviveWorld(c) {
-  if (!worldB) { whiteout(showWorldB); return; }
+  if (!worldB) { G.revWait = c.clone(); return; } // the mended valley is still on its way: the wave starts the moment it lands
   G.rev = { t: 0, c: c.clone(), live: true }; worldB.visible = true;
   glow(0.4, 0.5, 2.6); EL.forEach((e, n) => pluck(e.note, 4, 0.12, n * 0.12)); EL.forEach((e, n) => bell(e.note * 2, 3, 0.04, 0.8 + n * 0.25));
 }
@@ -1380,8 +1381,9 @@ function updateRevive(dt) {
 }
 function glow(op, tin, tout) { const el = document.getElementById('flash'); el.classList.remove('go'); el.style.background = '#fff4dc'; el.style.transition = `opacity ${tin}s ease-in`; el.style.opacity = 0; void el.offsetWidth; el.style.opacity = op;
   setTimeout(() => { el.style.transition = `opacity ${tout}s ease-out`; el.style.opacity = 0; setTimeout(() => { el.style.transition = ''; el.style.opacity = ''; }, tout * 1000 + 100); }, tin * 1000); }
-async function loadWorldB() {
-  const W = CFG.world; if (!W?.spzB) return;
+// the mended world: a light copy first so the ending is always the real valley, then the full-density one swaps in
+async function loadWorldB(src) {
+  const W = CFG.world; if (!src) return;
   const uRevB = new dyno.DynoVec4({ value: new THREE.Vector4(0, 0, 0, -1) });
   const modB = dyno.dynoBlock({ gsplat: dyno.Gsplat }, { gsplat: dyno.Gsplat }, ({ gsplat }) => {
     const d = new dyno.Dyno({ inTypes: { gsplat: dyno.Gsplat, rv: 'vec4' }, outTypes: { gsplat: dyno.Gsplat }, inputs: { gsplat, rv: uRevB },
@@ -1396,8 +1398,11 @@ async function loadWorldB() {
       `) });
     return { gsplat: d.outputs.gsplat };
   });
-  try { worldB = new SplatMesh({ fileBytes: await loadBin(W.spzB), fileType: 'spz', worldModifier: modB }); REV_SYNC.push(v => { uRevB.value.copy(v); worldB.updateVersion(); }); const t = W.transformB || W.transform || {}; if (t.position) worldB.position.fromArray(t.position); worldB.quaternion.fromArray(t.quaternion || [1, 0, 0, 0]); if (t.scale) worldB.scale.setScalar(t.scale); worldB.visible = false; scene.add(worldB); }
-  catch (e) { console.warn('world B failed', e); worldB = null; }
+  try { const m = new SplatMesh({ fileBytes: await loadBin(src), fileType: 'spz', worldModifier: modB }); const t = W.transformB || W.transform || {}; if (t.position) m.position.fromArray(t.position); m.quaternion.fromArray(t.quaternion || [1, 0, 0, 0]); if (t.scale) m.scale.setScalar(t.scale);
+    await m.initialized; uRevB.value.copy(REV); m.updateVersion(); const old = worldB; m.visible = old ? old.visible : false; scene.add(m); worldB = m; m.__rs = v => { uRevB.value.copy(v); m.updateVersion(); }; REV_SYNC.push(m.__rs);
+    if (old) { REV_SYNC.splice(REV_SYNC.indexOf(old.__rs), 1); setTimeout(() => { scene.remove(old); old.dispose?.(); }, 400); }
+    if (G.revWait) { const c = G.revWait; G.revWait = null; reviveWorld(c); } else if (G.phase === 'won' && !G.rev) showWorldB(); }
+  catch (e) { console.warn('world B failed', e); }
 }
 // ---------- loop ----------
 const clock = new THREE.Clock();
@@ -1807,7 +1812,7 @@ function resetGame() {
   G.chain = []; G.mistakes = 0; throws.length = 0; G.restoreAnim = [0, 0, 0, 0, 0]; U.uAll.value = 0; G.t0 = G.t; flights.length = 0; G.healR = 0; if (seam) { scene.remove(seam); seam = null; }
   for (const o of G.ores) { o.taken = false; o.used = false; o.stone.visible = true; o.stone.scale.setScalar(1); o.stone.position.copy(o.home); o.beam.visible = true; o.light.visible = true; }
   crackSegs.forEach(s => { s.mended = 0; s.el = null; s.mesh.material.color.set(0xfff6e0); if (s.rib) s.rib.parts.forEach(pp => { pp.core.material.color.set(0xffe2b0); pp.glow.material.color.set(0xff4a20); }); });
-  G.villagers.forEach(v => v.visible = false); G.cut = false; AV.fly = null; AV.camInit = false; nuwaBody.scale.setScalar(1); if (G.nuwaFade) { G.nuwaFade.forEach(([m, tr, o]) => { m.transparent = tr; m.opacity = o; }); G.nuwaFade = null; } nuwaBody.position.y = 0; if (G.fuse) { scene.remove(G.fuse.orb); G.fuse = null; } pillars.splice(0).forEach(p => scene.remove(p.m)); birds.forEach(b => b.g.visible = false); if (G.nuwaGlow) G.nuwaGlow.intensity = 0; G.rev = null; REV.set(0, 0, 0, -1); REV_SYNC.forEach(f => f(REV)); if (worldB) { worldB.visible = false; water.visible = true; if (splatMesh) splatMesh.visible = true; if (G.furnace) G.furnace.obj.visible = true; }
+  G.villagers.forEach(v => v.visible = false); G.cut = false; AV.fly = null; AV.camInit = false; nuwaBody.scale.setScalar(1); if (G.nuwaFade) { G.nuwaFade.forEach(([m, tr, o]) => { m.transparent = tr; m.opacity = o; }); G.nuwaFade = null; } nuwaBody.position.y = 0; if (G.fuse) { scene.remove(G.fuse.orb); G.fuse = null; } pillars.splice(0).forEach(p => scene.remove(p.m)); birds.forEach(b => b.g.visible = false); if (G.nuwaGlow) G.nuwaGlow.intensity = 0; G.rev = null; G.revWait = null; REV.set(0, 0, 0, -1); REV_SYNC.forEach(f => f(REV)); if (worldB) { worldB.visible = false; water.visible = true; if (splatMesh) splatMesh.visible = true; if (G.furnace) G.furnace.obj.visible = true; }
   player.pos.set(START_POS.x, groundFn(START_POS.x, START_POS.y), START_POS.y); player.yaw = Math.atan2(-(FURNACE_POS.x - START_POS.x), -(FURNACE_POS.y - START_POS.y)); player.pitch = 0.12; // facing the distant furnace
   G.endShowT = null; $('end').style.opacity = ''; $('end').hidden = true; $('lose').hidden = true; $('intro').hidden = true; $('hud').hidden = false;
   G.n50 = G.n80 = 0; hudRing(); say(TP ? '第一步：跟着金色光点走到发光的石头旁，按 E 或左键拾起 · Follow the golden dots to a glowing stone, then press E or click' : '第一步：跟着金色光点找到原石，点击抓起 · Follow the golden lights and grab an ore', 7000);
@@ -1852,4 +1857,4 @@ addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; cam
 })();
 
 // test / recording hooks
-window.__butian = { sp: () => splatMesh, wbo: () => worldB, revive: (t) => { if (!G.rev) reviveWorld(crackSegs[2].center); G.rev.t = t; updateRevive(0); }, forgeDone, gy: (x, z) => groundFn(x, z), bolt: () => { boltT = 0; }, quake, pick: (nx, ny) => { const r = new THREE.Raycaster(); r.setFromCamera(new THREE.Vector2(nx, ny), camera); return [camera.position.toArray().map(v => +v.toFixed(1)), ...r.intersectObjects(groundMeshes, false).slice(0, 3).map(h => h.point.toArray().map(v => +v.toFixed(1)))]; }, NEXT, AV, wb: () => worldB && { vis: worldB.visible, ready: !!worldB.isInitialized || true }, crackSegs, hand, handL, FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };
+window.__butian = { sp: () => splatMesh, wbo: () => worldB, cam: () => camera, sky: () => scene.children.filter(o => o.visible).map(o => o.type + ":" + (o.name || "")).slice(0, 80), revive: (t) => { if (!G.rev) reviveWorld(crackSegs[2].center); G.rev.t = t; updateRevive(0); }, forgeDone, gy: (x, z) => groundFn(x, z), bolt: () => { boltT = 0; }, quake, pick: (nx, ny) => { const r = new THREE.Raycaster(); r.setFromCamera(new THREE.Vector2(nx, ny), camera); return [camera.position.toArray().map(v => +v.toFixed(1)), ...r.intersectObjects(groundMeshes, false).slice(0, 3).map(h => h.point.toArray().map(v => +v.toFixed(1)))]; }, NEXT, AV, wb: () => worldB && { vis: worldB.visible, ready: !!worldB.isInitialized || true }, crackSegs, hand, handL, FP: () => FURNACE_POS, setPause, G, player, EL, interact, startGame, win, U, teleport: (x, z) => { player.pos.x = x; player.pos.z = z; } };

@@ -44,9 +44,9 @@ WASD 移动 · 鼠标环顾 · Shift 冲刺 · 空格跳 · E 或左键 拾石 /
 
 ![Nüwa dissolves](source/preview/fin-dissolve.jpg)
 
-**苍天补好，四极端正 · The sky is whole**
+**补好的山谷：World Labs Marble 生成的修复世界 · The mended valley, a second Marble world**
 
-![Ending](source/preview/fin-birds.jpg)
+![Ending](source/preview/ending-reborn.jpg)
 
 **高清世界前后对比（左：50 万点，右：200 万点）· Before and after full-density worlds**
 

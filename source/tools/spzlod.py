@@ -17,9 +17,9 @@ dx=np.maximum(0,np.maximum(x0-p[:,0],p[:,0]-x1));dz=np.maximum(0,np.maximum(z0-p
 dist=np.sqrt(dx*dx+dz*dz)
 # splat size (log scale encoded): bigger splats survive more
 s=sc.astype(np.float32).mean(1)
-M=15.0
+# uniform thinning: every splat has the same chance, so no region gets sparse and no splat has to grow much
 def keep(R):
-    return np.clip(R*(M/np.maximum(dist,M))**2,0,1)
+    return np.full(n, R)
 lo,hi=0.01,1.0
 for _ in range(40):
     R=(lo+hi)/2
