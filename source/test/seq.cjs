@@ -1,0 +1,21 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const p = await b.newPage({ viewport: { width: 640, height: 360 } }); const errs = [];
+  p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+  await p.route(/fonts\.(googleapis|gstatic)/, r => r.abort());
+  await p.goto('http://localhost:8765/?v=q' + Date.now());
+  await p.waitForFunction(() => window.__butian && !document.getElementById('start').disabled, null, { timeout: 240000 });
+  await p.evaluate(() => { const B = __butian; B.startGame(); B.sp().visible = false; B.G.phase = 'play'; document.getElementById('cine').hidden = true;
+    ['wood','fire','earth','metal','water'].forEach(k => B.forgeDone(B.G.ores.find(o => o.el.key === k))); });
+  const t0 = Date.now();
+  await p.waitForFunction(() => __butian.G.fuse && __butian.G.fuse.t > 2.6, null, { timeout: 600000 });
+  await p.evaluate(() => { __butian.setPause(true); __butian.sp().visible = true; document.getElementById('pause').hidden = true; });
+  await p.waitForTimeout(8000); await p.screenshot({ path: 's3/fuse.jpg', quality: 70, timeout: 300000 });
+  await p.evaluate(() => { __butian.sp().visible = false; __butian.setPause(false); document.getElementById('pause').hidden = true; });
+  await p.waitForFunction(() => __butian.AV.fly, null, { timeout: 600000 }); console.log('flight started', (Date.now() - t0) / 1000);
+  await p.waitForFunction(() => __butian.G.phase === 'won', null, { timeout: 1200000 }); console.log('won', (Date.now() - t0) / 1000);
+  await p.waitForFunction(() => __butian.G.endT > 39, null, { timeout: 1800000 });
+  console.log('end', await p.evaluate(() => [__butian.G.endT.toFixed(1), document.getElementById('end').hidden, document.getElementById('end-time').textContent]));
+  console.log('errors:', errs.slice(0, 6).join(' | ')); await b.close();
+})();

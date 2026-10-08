@@ -1,0 +1,12 @@
+import { build } from 'esbuild';
+import fs from 'fs';
+const cfgPath = process.argv[2] || 'config.json';
+const cfg = fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf8') : '{}';
+const r = await build({ entryPoints: ['src/main.js'], bundle: true, minify: process.env.NOMIN ? false : true, format: 'esm', write: false, target: 'es2020', legalComments: 'none' });
+const js = r.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
+let html = fs.readFileSync('src/shell.html', 'utf8');
+html = html.replace('<!--CONFIG-->', () => `<script>window.BUTIAN_CONFIG=${cfg.trim()};</script>`);
+html = html.replace('<!--SCRIPT-->', () => `<script type="module">${js}</script>`);
+fs.mkdirSync('dist', { recursive: true });
+fs.writeFileSync('dist/index.html', html);
+console.log('dist/index.html', (html.length / 1e6).toFixed(2), 'MB');
